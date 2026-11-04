@@ -1,2 +1,2 @@
 # palimpsest
-A generative graphics program in which shapes continually expand or contract and overwrite one another within color planes.
+A generative graphics program in which shapes evolve and overwrite one another within color planes.
