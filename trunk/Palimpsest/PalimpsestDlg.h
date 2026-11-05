@@ -8,6 +8,8 @@
 		revision history:
 		rev		date	comments
         00      03nov26	initial version
+		01		05nov26	make export offline
+		02		05nov26	add supersampling
 
 */
 
@@ -18,10 +20,8 @@
 
 #include "MidiWrap.h"
 #include "RandList.h"
-
-enum {
-	UWM_MM_TIMER = WM_APP + 1,
-};
+#include "Benchmark.h"
+#include "Statistics.h"
 
 // CPalimpsestDlg dialog
 class CPalimpsestDlg : public CDialogEx
@@ -52,10 +52,16 @@ protected:
 		IDM_ABOUTBOX		= 0x0010,
 		IDM_FULL_SCREEN		= 0x0020,
 	};
-
+	enum {	// launch types
+		LT_NORMAL,
+		LT_MAXIMIZED,
+		LT_FULLSCREEN,
+	};
 	CDC		m_dcBack;	// backbuffer device context
 	CBitmap	m_bmpBack;	// backbuffer bitmap
 	CBitmap	*m_pOldBitmap;	// previous bitmap
+	CSize	m_szBackBuf;	// size of backbuffer
+	ULONG_PTR	m_gdiplusToken;	// for GDI+ startup
 
 	CRandList	m_rlColor;	// shuffle for colors
 	CRandList	m_rlChanMask;	// shuffle for color channel masks
@@ -72,8 +78,12 @@ protected:
 	bool	m_bIsPaused;	// true if paused
 	bool	m_bSingleStep;	// true if advancing by one frame while paused
 	bool	m_bFreshStart;	// true if backbuffer was recreated
+	int		m_nLaunchType;	// launch app in full screen mode or maximized; see enum
 	int		m_nSpeed;		// expansion/contraction speed, in pixels per tick
-	DWORD	m_nFrameCount;	// frame counter for capture
+	LONGLONG	m_nFrameCount;	// frame counter for capture
+	LONGLONG	m_nPrevFrameCount;	// for monitoring frame rate
+	CBenchmark	m_bmFrameTimer;	// for monitoring frame rate
+	CStatistics	m_stat;		// for performance monitoring
 
 	DWORD	m_dwWindowStyle;
 	DWORD	m_dwWindowExStyle;
@@ -86,7 +96,9 @@ protected:
 
 	void	InitGeom();
 	bool	CreateBackbuffer(CSize sz);
-	void	SaveFrame(LPCTSTR pszPath);
+	bool	SaveFrame(LPCTSTR pszPath);
+	void	RenderFrame();
+	bool	ExportVideo(CSize szFrame, int nFrames, LPCTSTR pszFolder);
 
 	virtual BOOL OnInitDialog();
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
@@ -100,4 +112,6 @@ protected:
 	afx_msg LRESULT OnMMTimer(WPARAM wParam, LPARAM lParam);
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
+	afx_msg void OnDestroy();
+	afx_msg LRESULT OnDelayedCreate(WPARAM wParam, LPARAM lParam);
 };

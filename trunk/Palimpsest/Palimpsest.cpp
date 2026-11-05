@@ -1,3 +1,15 @@
+// Copyleft 2026 Chris Korda
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or any later version.
+/*
+        chris korda
+ 
+		revision history:
+		rev		date	comments
+        00      03nov26	initial version
+
+*/
 
 // Palimpsest.cpp : Defines the class behaviors for the application.
 //
@@ -23,8 +35,6 @@ END_MESSAGE_MAP()
 
 CPalimpsestApp::CPalimpsestApp()
 {
-	// TODO: add construction code here,
-	// Place all significant initialization in InitInstance
 }
 
 
@@ -67,22 +77,16 @@ BOOL CPalimpsestApp::InitInstance()
 	// of your final executable, you should remove from the following
 	// the specific initialization routines you do not need
 	// Change the registry key under which our settings are stored
-	// TODO: You should modify this string to be something appropriate
-	// such as the name of your company or organization
-	SetRegistryKey(_T("Local AppWizard-Generated Applications"));
+	SetRegistryKey(_T("Anal Software"));
 
 	CPalimpsestDlg dlg;
 	m_pMainWnd = &dlg;
 	INT_PTR nResponse = dlg.DoModal();
 	if (nResponse == IDOK)
 	{
-		// TODO: Place code here to handle when the dialog is
-		//  dismissed with OK
 	}
 	else if (nResponse == IDCANCEL)
 	{
-		// TODO: Place code here to handle when the dialog is
-		//  dismissed with Cancel
 	}
 	else if (nResponse == -1)
 	{

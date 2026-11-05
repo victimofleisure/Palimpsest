@@ -18,6 +18,7 @@
 #include "Wrapx64.h"	// ck: special types for supporting both 32-bit and 64-bit
 #include "WObject.h"	// ck: ultra-minimal base class used by many of my objects
 #include "Round.h"		// ck: round floating point to integer
+#include "ArrayEx.h"	// ck: wraps MFC dynamic arrays, adding speed and features
 
 // define registry section for settings
 #define REG_SETTINGS _T("Settings")
@@ -90,4 +91,5 @@ enum {	// application-wide user window messages, based on WP_APP
 	UWM_DELAYED_CREATE,			// wParam: none, lParam: none
 	UWM_DELAYED_ACTIVATE,		// wParam: none, lParam: none
 	UWM_DELAYED_RESIZE,			// wParam: none, lParam: none
+	UWM_MM_TIMER,				// wParam: none, lParam: none
 };

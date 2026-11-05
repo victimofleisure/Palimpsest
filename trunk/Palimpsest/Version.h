@@ -7,7 +7,9 @@
  
 		revision history:
 		rev		date	comments
-        00      03nov26	1.0.00.000
+        00      02nov26	1.0.00.000
+        01      03nov26	1.0.00.001
+		02		05nov26	1.0.00.002
 
 		DON'T FORGET TO CHANGE VERSION RESOURCE
 
