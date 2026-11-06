@@ -188,7 +188,15 @@
     <ClInclude Include="ArrayEx.h" />
     <ClInclude Include="ArrayExAlgoDef.h" />
     <ClInclude Include="Benchmark.h" />
+    <ClInclude Include="BoundArray.h" />
+    <ClInclude Include="Diatonic.h" />
     <ClInclude Include="Globals.h" />
+    <ClInclude Include="HeptatonicDef.h" />
+    <ClInclude Include="Midi.h" />
+    <ClInclude Include="MidiCtrlrDef.h" />
+    <ClInclude Include="MidiFile.h" />
+    <ClInclude Include="ModeDef.h" />
+    <ClInclude Include="Note.h" />
     <ClInclude Include="Palimpsest.h" />
     <ClInclude Include="PalimpsestDlg.h" />
     <ClInclude Include="Easing.h" />
@@ -197,6 +205,7 @@
     <ClInclude Include="RandList.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="Round.h" />
+    <ClInclude Include="Scale.h" />
     <ClInclude Include="Statistics.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
@@ -210,12 +219,16 @@
     <ClCompile Include="AboutDlg.cpp" />
     <ClCompile Include="ArrayEx.cpp" />
     <ClCompile Include="Benchmark.cpp" />
+    <ClCompile Include="Diatonic.cpp" />
+    <ClCompile Include="MidiFile.cpp" />
+    <ClCompile Include="Note.cpp" />
     <ClCompile Include="Palimpsest.cpp" />
     <ClCompile Include="PalimpsestDlg.cpp" />
     <ClCompile Include="Easing.cpp" />
     <ClCompile Include="MidiWrap.cpp" />
     <ClCompile Include="ProgressDlg.cpp" />
     <ClCompile Include="RandList.cpp" />
+    <ClCompile Include="Scale.cpp" />
     <ClCompile Include="Statistics.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

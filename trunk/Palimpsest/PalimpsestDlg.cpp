@@ -10,6 +10,7 @@
 		00      03nov26	initial version
 		01		05nov26	make export offline
 		02		05nov26	add supersampling
+		03		06nov26	add musical accompaniment
 
 */
 
@@ -25,25 +26,26 @@
 #include "AboutDlg.h"
 #include "gdiplus.h"
 #include "ProgressDlg.h"
+#include "Midi.h"
+#include "Note.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
-#define RANDOM_SEED		123
-#define RECORD_VIDEO	0		// non-zero to record as image series
-#define REC_FRAME_COUNT	7200	// record duration in frames
-#define REC_FRAME_SIZE	CSize(1920, 1080)	// record frame size in pixels
-#define REC_SUPERSAMPLE 4		// 1 = original indexed PNG; 4 = render 4x, downsample
-#define REC_FOLDER_PATH		_T("E:\\temp\\video\\Palimpsest\\")
-#define PRINT_FRAME_RATE	0	// non-zero to print display frame rate in console
+#define RANDOM_SEED			123		// random number seed, or zero to use system time
+#define MIDI_OUT_DEVICE		1		// output MIDI device index
 
-// Scale geometry only; the simulation continues in output-frame coordinates.
-static CRect ScaleRect(const CRect& rc, int nScale)
-{
-	return CRect(rc.left * nScale, rc.top * nScale,
-		rc.right * nScale, rc.bottom * nScale);
-}
+#define EXPORT_IMAGE_SEQ	0		// non-zero to export an image sequence
+#define EXPORT_FRAME_RATE	60		// export frame rate in frames per second
+#define EXPORT_FRAME_COUNT	19691	// export duration in frames
+#define EXPORT_FRAME_SIZE	CSize(1920, 1080)	// export frame size in pixels
+#define EXPORT_SUPERSAMPLE	4		// 1 = original indexed PNG; 4 = render 4x, downsample
+#define EXPORT_FOLDER_PATH	_T("E:\\temp\\video\\Palimpsest\\")	// export folder path
+#define EXPORT_MIDI_ONLY	0	// non-zero to export MIDI only
+
+#define PRINT_FRAME_RATE	0	// non-zero to print display frame rate in console
+#define LOG_CYCLE_TIMES		0	// non-zero to write cycle timing to log file
 
 // CPalimpsestDlg dialog
 
@@ -54,7 +56,8 @@ CPalimpsestDlg::CPalimpsestDlg(CWnd* pParent /*=NULL*/)
 	m_pOldBitmap = NULL;
 	m_szBackBuf = CSize(0, 0);
 	m_gdiplusToken = 0;
-	srand(RANDOM_SEED ? RANDOM_SEED : GetTickCount());
+	m_nRandSeed = RANDOM_SEED ? RANDOM_SEED : GetTickCount();
+	srand(m_nRandSeed);
 	m_nTimerPeriod = 16;
 	m_nSpeed = 4;
 	m_bContracting = false;
@@ -66,6 +69,15 @@ CPalimpsestDlg::CPalimpsestDlg(CWnd* pParent /*=NULL*/)
 	m_nFrameCount = 0;
 	m_nPrevFrameCount = 0;
 	InitGeom();
+
+	// musical accompaniment
+	ZeroMemory(m_arrColorNote, sizeof(m_arrColorNote));
+	ZeroMemory(m_arrChanNote, sizeof(m_arrChanNote));
+	ZeroMemory(m_arrChanVolume, sizeof(m_arrChanVolume));
+	m_nCurMidiChan = 0;
+	m_nChanCycles = 0;
+	m_bIsMidiExport = false;
+	m_nPrevNote = -1;
 }
 
 void CPalimpsestDlg::InitGeom()
@@ -238,11 +250,11 @@ bool CPalimpsestDlg::SaveFrame(LPCTSTR pszPath)
 		0x557cf406, 0x1a04, 0x11d3,
 		{0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e}
 	};
-	if (RECORD_VIDEO && REC_SUPERSAMPLE > 1) {
+	if (EXPORT_IMAGE_SEQ && EXPORT_SUPERSAMPLE > 1) {
 		// Resolve the palette before filtering: antialiasing must mix RGB,
 		// not the numerical palette indices.
-		const int nWidth = ds.dsBm.bmWidth / REC_SUPERSAMPLE;
-		const int nHeight = abs(ds.dsBm.bmHeight) / REC_SUPERSAMPLE;
+		const int nWidth = ds.dsBm.bmWidth / EXPORT_SUPERSAMPLE;
+		const int nHeight = abs(ds.dsBm.bmHeight) / EXPORT_SUPERSAMPLE;
 		Gdiplus::Bitmap output(nWidth, nHeight, PixelFormat32bppRGB);
 		if (output.GetLastStatus() != Gdiplus::Ok)
 			return false;
@@ -263,9 +275,16 @@ bool CPalimpsestDlg::SaveFrame(LPCTSTR pszPath)
 	}
 }
 
+// Scale geometry only; the simulation continues in output-frame coordinates.
+static CRect ScaleRect(const CRect& rc, int nScale)
+{
+	return CRect(rc.left * nScale, rc.top * nScale,
+		rc.right * nScale, rc.bottom * nScale);
+}
+
 void CPalimpsestDlg::RenderFrame()
 {
-	const int nScale = RECORD_VIDEO ? REC_SUPERSAMPLE : 1;
+	const int nScale = EXPORT_IMAGE_SEQ ? EXPORT_SUPERSAMPLE : 1;
 	CSize szWnd(m_szBackBuf.cx / nScale, m_szBackBuf.cy / nScale);
 	int nSize = min(szWnd.cx, szWnd.cy);
 	if (nSize <= 0)
@@ -303,19 +322,21 @@ void CPalimpsestDlg::RenderFrame()
 		m_clrTarget.rgbReserved = 0;
 
 		m_bContracting = (rand() & 1) != 0;	// select direction
+
+		MidiStartDraw();
 	}
 
 	// Expand at constant radial speed
 	int nMaxRadius = max(m_szEllipse.cx, m_szEllipse.cy);
 	m_nRadius = min(m_nRadius + m_nSpeed, nMaxRadius);
 
-	double t = double(m_nRadius) / nMaxRadius;
-	double f = EaseOut(t, 0.3);
-	double g = m_bContracting ? 1.0 - f : f;
+	double fPos = double(m_nRadius) / nMaxRadius;
+	double fEasedPos = EaseOut(fPos, 0.3);
+	double fBidirPos = m_bContracting ? 1.0 - fEasedPos : fEasedPos;
 
 	CSize sz(
-		Round(m_szEllipse.cx * g),
-		Round(m_szEllipse.cy * g));
+		Round(m_szEllipse.cx * fBidirPos),
+		Round(m_szEllipse.cy * fBidirPos));
 
 	CRect rEllipse(
 		m_ptCenter.x - sz.cx,
@@ -323,7 +344,7 @@ void CPalimpsestDlg::RenderFrame()
 		m_ptCenter.x + sz.cx,
 		m_ptCenter.y + sz.cy);
 
-	if (REC_SUPERSAMPLE > 1) {
+	if (EXPORT_SUPERSAMPLE > 1) {
 		// Convert only the final drawing geometry to physical pixels.
 		rEllipse = ScaleRect(rEllipse, nScale);
 	}
@@ -338,7 +359,7 @@ void CPalimpsestDlg::RenderFrame()
 			m_ptCenter.x + m_szEllipse.cx,
 			m_ptCenter.y + m_szEllipse.cy);
 
-		if (REC_SUPERSAMPLE > 1) {
+		if (EXPORT_SUPERSAMPLE > 1) {
 			rOuter = ScaleRect(rOuter, nScale);
 		}
 
@@ -368,54 +389,239 @@ void CPalimpsestDlg::RenderFrame()
 	if (m_bContracting)
 		m_dcBack.SelectClipRgn(NULL);
 
-	if (m_nRadius >= nMaxRadius)
-		m_nRadius = -1;
-
 	// Interpolate the active palette entry.
 	RGBQUAD clr;
 	clr.rgbRed = BYTE(Round(
 		m_clrStart.rgbRed +
-		(m_clrTarget.rgbRed - m_clrStart.rgbRed) * f));
+		(m_clrTarget.rgbRed - m_clrStart.rgbRed) * fEasedPos));
 
 	clr.rgbGreen = BYTE(Round(
 		m_clrStart.rgbGreen +
-		(m_clrTarget.rgbGreen - m_clrStart.rgbGreen) * f));
+		(m_clrTarget.rgbGreen - m_clrStart.rgbGreen) * fEasedPos));
 
 	clr.rgbBlue = BYTE(Round(
 		m_clrStart.rgbBlue +
-		(m_clrTarget.rgbBlue - m_clrStart.rgbBlue) * f));
+		(m_clrTarget.rgbBlue - m_clrStart.rgbBlue) * fEasedPos));
 
 	clr.rgbReserved = 0;
 
 	VERIFY(SetDIBColorTable(m_dcBack.GetSafeHdc(),
 		m_iCurColor, 1, &clr) == 1);
 
+	MidiContinueDraw(fEasedPos);
+
+	if (m_nRadius >= nMaxRadius)
+		m_nRadius = -1;
+
 	m_nFrameCount++;
 }
 
 bool CPalimpsestDlg::ExportVideo(CSize szFrame, int nFrames, LPCTSTR pszFolder)
 {
-	CSize szRender(szFrame.cx * REC_SUPERSAMPLE,
-		szFrame.cy * REC_SUPERSAMPLE);
+	CSize szRender(szFrame.cx * EXPORT_SUPERSAMPLE,
+		szFrame.cy * EXPORT_SUPERSAMPLE);
 	if (!CreateBackbuffer(szRender))
 		return false;
+	m_bIsMidiExport = true;
+	MidiFileInit();
 	CProgressDlg	dlgProg;
 	if (!dlgProg.Create())
 		return false;
 	dlgProg.SetRange(0, nFrames);
-	for (int iFrame = 0; iFrame < nFrames; iFrame++) {
-		RenderFrame();
-		CString sPath;
-		sPath.Format(_T("%simg%06d.png"), pszFolder, iFrame);
-		if (!SaveFrame(sPath))
-			return false;
+	int	nTrailer = 300;	// pad with extra frames at end
+	for (int iFrame = 0; iFrame < nFrames + nTrailer; iFrame++) {
+		if (iFrame < nFrames)
+			RenderFrame();
+		else {
+			if (iFrame == nFrames) {
+				MidiClose();
+			}
+			m_nFrameCount++;
+		}
+		if (!EXPORT_MIDI_ONLY) {
+			CString sFrameIdx;
+			sFrameIdx.Format(_T("%06d"), iFrame);
+			CString	sImgFilePath(CString(pszFolder) 
+				+ _T("img") + sFrameIdx + _T(".png"));
+			if (!SaveFrame(sImgFilePath))
+				return false;
+		}
 		dlgProg.SetPos(iFrame);
 		if (dlgProg.Canceled())
 			return false;
 	}
-
+	MidiClose();	// release active note
+	MidiFileInit();	// helps avoid ragged clips in Reason
+	CString	sMidiFilePath(CString(pszFolder) + _T("Palimpsest.mid"));
+	WriteMidiFile(sMidiFilePath);
 	return true;
 }
+
+// musical accompaniment
+
+void CPalimpsestDlg::MakeScale(int nStartNote)
+{
+	// assign notes from Lydian mode of major scale
+	static const int arrScale[] = {0, 2, 4, 6, 7, 9, 11};
+	const int nScaleLen = _countof(arrScale);
+	m_arrColorNote[0] = static_cast<BYTE>(nStartNote - 12);	// drop lowest note an octave
+	for (int iTone = 1; iTone < COLORS; iTone++) {
+		int	nNote = nStartNote + iTone / nScaleLen * 12 + arrScale[iTone % nScaleLen];
+		ASSERT(nNote >= 0 && nNote < MIDI_NOTES);
+		m_arrColorNote[iTone] = static_cast<BYTE>(nNote);
+	}
+}
+
+void CPalimpsestDlg::PrintScale()
+{
+	for (int iTone = 0; iTone < COLORS; iTone++) {
+		CNote	note(m_arrColorNote[iTone]);
+		_tprintf(_T("%s "), note.MidiName());
+	}
+}
+
+bool CPalimpsestDlg::MidiOpen()
+{
+	if (FAILED(m_midiOut.Open(MIDI_OUT_DEVICE, NULL, NULL, 0))) {
+		AfxMessageBox(_T("Can't open MIDI output device"));
+		return false;
+	}
+	MidiInit();
+	return true;
+}
+
+void CPalimpsestDlg::MidiFileInit()
+{
+	// forces creation of event blocks in Reason
+	ASSERT(m_bIsMidiExport);
+	for (int iChan = 0; iChan < COLORS; iChan++) {
+		MidiOut(CONTROL, iChan, CC_VOLUME, 0);
+		MidiOut(CONTROL, iChan, CC_PAN, 0);
+		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 0);
+		MidiOut(CONTROL, iChan, CC_AMP_ENV_RELEASE, 0);
+		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 0);
+	}
+	MidiInit();	// then do regular init
+}
+
+void CPalimpsestDlg::MidiInit()
+{
+	for (int iChan = 0; iChan < COLORS; iChan++) {
+		// set amplitude envelope attack long enough to comfortably avoid a click
+		// at start of note, due to the sampler's having a non-zero sample start
+		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 25);
+		// set amplitude velocity amount big enough to allow reasonable dynamics
+		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 94);
+	}
+}
+
+void CPalimpsestDlg::MidiClose()
+{
+	// release active note
+	if (m_arrChanNote[m_nCurMidiChan]) {
+		MidiOut(NOTE_ON, m_nCurMidiChan, m_arrChanNote[m_nCurMidiChan], 0);
+		m_arrChanNote[m_nCurMidiChan] = 0;	// mark note released
+	}
+	m_midiOut.Close();
+}
+
+void CPalimpsestDlg::MidiStartDraw()
+{
+	// following assumes COLORS == MIDI_CHANNELS
+	if (!m_nCurMidiChan) {	// if at start of channel cycle
+		// make a new scale
+		int	nBottomNote = 36 + 4;
+		int	nStartNote = nBottomNote + m_nChanCycles * 5 % 24;
+		MakeScale(nStartNote);
+		if (LOG_CYCLE_TIMES) {
+			CString	sLine;
+			sLine.Format(_T("%d: cycle %d\n"), m_nFrameCount, m_nChanCycles);
+			m_fLog.WriteString(sLine);
+		}
+		m_nChanCycles++;	// bump channel cycle count
+	}
+	// release current channel's note
+	int	nActiveNote = m_arrChanNote[m_nCurMidiChan];
+	if (nActiveNote) {
+		MidiOut(NOTE_ON, m_nCurMidiChan, nActiveNote, 0);
+	}
+	// advance current channel
+	m_nCurMidiChan++;
+	if (m_nCurMidiChan >= COLORS)	// if reached end of channels
+		m_nCurMidiChan = 0;	// wrap around to first channel
+	// set current channel's volume to zero
+	MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, 0);
+	// set current channel's panning
+	// define logical position of each channel, with lowest pitches centered
+	static const BYTE arrPanPos[COLORS] = {8,7,9,6,10,5,11,4,12,3,13,2,14,1,15,0};
+	int	iPanPos = arrPanPos[m_iCurColor];
+	int	nPan = min(iPanPos * 8, 127);	// convert logical position to pan value
+	MidiOut(CONTROL, m_nCurMidiChan, CC_PAN, nPan);
+	// set current channel's amplitude envelope release time
+	int	nReleaseTime = m_iCurColor ? 90 : 110;	// give bass note a longer duration
+	MidiOut(CONTROL, m_nCurMidiChan, CC_AMP_ENV_RELEASE, nReleaseTime);
+	// start current channel's note
+	int	nNote = m_arrColorNote[m_iCurColor];
+	int	nVel = min(64 + (COLORS - 1 - m_iCurColor) * 4, 127);
+	MidiOut(NOTE_ON, m_nCurMidiChan, nNote, nVel);
+	m_arrChanNote[m_nCurMidiChan] = nNote;	// update current channel's note state
+	m_nPrevNote = nNote;
+}
+
+void CPalimpsestDlg::MidiContinueDraw(double fPos)
+{
+	// update current channel's volume
+	int	nVolume = Round(fPos * 127);
+	if (nVolume != m_arrChanVolume[m_nCurMidiChan]) {	// if volume actually changed
+		MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, nVolume);
+		m_arrChanVolume[m_nCurMidiChan] = nVolume;	// update cached volume
+	}
+}
+
+DWORD CPalimpsestDlg::GetFrameTick(int iFrame)
+{
+	const double	fTicksPerSec = (double(MF_TEMPO) / 60) * MF_TIMEBASE;
+	double fFrameTimeSecs = (1.0 / EXPORT_FRAME_RATE) * iFrame;
+	return Round(fTicksPerSec * fFrameTimeSecs);
+}
+
+void CPalimpsestDlg::MidiOut(int nCmd, int nChan, int nP1, int nP2)
+{
+	DWORD	dwMsg = MakeMidiMsg(nCmd, nChan, nP1, nP2);
+	if (m_bIsMidiExport) {
+		DWORD	dwTime = GetFrameTick(m_nFrameCount);
+		CMidiFile::MIDI_EVENT	evt = {dwTime, dwMsg};
+		m_arrMidiEvent[nChan].Add(evt);
+	} else {
+		m_midiOut.OutShortMsg(dwMsg);
+	}
+}
+
+void CPalimpsestDlg::WriteMidiFile(LPCTSTR pszPath)
+{
+	ASSERT(m_bIsMidiExport);
+	CMidiFile	fMidi(pszPath, CFile::modeCreate | CFile::modeWrite);
+	DWORD	dwDuration = GetFrameTick(m_nFrameCount);
+	fMidi.WriteHeader(COLORS, MF_TIMEBASE, MF_TEMPO, dwDuration, NULL, NULL, NULL);
+	CStdioFile	fText(_T("midi.txt"), CFile::modeCreate | CFile::modeWrite);
+	for (int iChan = 0; iChan < COLORS; iChan++) {
+		CMidiFile::CMidiEventArray& arrEvt = m_arrMidiEvent[iChan];
+		int	nEvts = arrEvt.GetSize();
+		DWORD	nPrevTime = 0;
+		for (int iEvt = 0; iEvt < nEvts; iEvt++) {
+			CMidiFile::MIDI_EVENT& evt = arrEvt[iEvt];
+			CString	s;
+			s.Format(_T("%d\t%x\n"), evt.DeltaT, evt.Msg);
+			fText.WriteString(s);
+			DWORD	nCurTime = evt.DeltaT;	// absolute time 
+			evt.DeltaT = nCurTime - nPrevTime;	// convert to delta time
+			nPrevTime = nCurTime;	// update previous time
+		}
+		fMidi.WriteTrack(arrEvt);
+		fText.WriteString(_T("\n"));
+	}
+}
+
 BEGIN_MESSAGE_MAP(CPalimpsestDlg, CDialogEx)
 	ON_MESSAGE(UWM_MM_TIMER, OnMMTimer)
 	ON_WM_DESTROY()
@@ -458,11 +664,16 @@ BOOL CPalimpsestDlg::OnInitDialog()
 	m_rlColor.Init(COLORS);
 	m_rlChanMask.Init(COLORS - 1);
 
-	if (RECORD_VIDEO) {
+	m_fLog.Open(_T("log.txt"), CFile::modeCreate | CFile::modeWrite);
+	CString	sRandSeed;
+	sRandSeed.Format(_T("%d"), m_nRandSeed);
+	m_fLog.WriteString(_T("Seed: ") + sRandSeed + '\n');
+
+	if (EXPORT_IMAGE_SEQ) {
 		PostMessage(UWM_DELAYED_CREATE);
 	} else {
 		switch (m_nLaunchType) {
-		case LT_MAXIMIZED:
+		case LT_MAXIMIZE:
 			ShowWindow(SW_MAXIMIZE);
 			break;
 		case LT_FULLSCREEN:
@@ -476,6 +687,7 @@ BOOL CPalimpsestDlg::OnInitDialog()
 		m_timer.Create(m_nTimerPeriod, 1, TimerProc,
 			reinterpret_cast<DWORD_PTR>(GetSafeHwnd()),
 			TIME_PERIODIC | TIME_CALLBACK_FUNCTION | TIME_KILL_SYNCHRONOUS);
+		MidiOpen();
 	}
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
@@ -524,7 +736,7 @@ void CPalimpsestDlg::OnPaint()
 	else
 	{
 		CPaintDC dc(this);
-		if (!RECORD_VIDEO) {
+		if (!EXPORT_IMAGE_SEQ) {
 			if (m_dcBack.GetSafeHdc()) {
 				CRect rc;
 				GetClientRect(rc);
@@ -546,7 +758,7 @@ void CPalimpsestDlg::OnSize(UINT nType, int cx, int cy)
 {
 	CDialogEx::OnSize(nType, cx, cy);
 	Invalidate();
-	if (!RECORD_VIDEO) {
+	if (!EXPORT_IMAGE_SEQ) {
 		CreateBackbuffer(CSize(cx, cy));
 	}
 }
@@ -613,12 +825,13 @@ BOOL CPalimpsestDlg::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 
 void CPalimpsestDlg::OnDestroy()
 {
-	// Offline recording never starts the multimedia timer.
+	// Export never starts the multimedia timer.
 	// The timer wrappers retain their existing RAII cleanup behavior.
 	if (m_gdiplusToken) {
 		Gdiplus::GdiplusShutdown(m_gdiplusToken);
 		m_gdiplusToken = 0;
 	}
+	MidiClose();
 	CDialogEx::OnDestroy();
 }
 
@@ -632,7 +845,7 @@ LRESULT CPalimpsestDlg::OnDelayedCreate(WPARAM wParam, LPARAM lParam)
 	Gdiplus::GdiplusStartupInput input;
 	if (Gdiplus::GdiplusStartup(&m_gdiplusToken, &input, NULL) != Gdiplus::Ok)
 		return 0;
-	bool bSuccess = ExportVideo(REC_FRAME_SIZE, REC_FRAME_COUNT, REC_FOLDER_PATH);
+	bool bSuccess = ExportVideo(EXPORT_FRAME_SIZE, EXPORT_FRAME_COUNT, EXPORT_FOLDER_PATH);
 	if (!bSuccess)
 		AfxMessageBox(_T("Video export failed."));
 	EndDialog(bSuccess ? IDOK : IDCANCEL);

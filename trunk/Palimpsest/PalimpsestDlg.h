@@ -10,6 +10,7 @@
         00      03nov26	initial version
 		01		05nov26	make export offline
 		02		05nov26	add supersampling
+		03		06nov26	add musical accompaniment
 
 */
 
@@ -22,6 +23,7 @@
 #include "RandList.h"
 #include "Benchmark.h"
 #include "Statistics.h"
+#include "MidiFile.h"
 
 // CPalimpsestDlg dialog
 class CPalimpsestDlg : public CDialogEx
@@ -54,7 +56,7 @@ protected:
 	};
 	enum {	// launch types
 		LT_NORMAL,
-		LT_MAXIMIZED,
+		LT_MAXIMIZE,
 		LT_FULLSCREEN,
 	};
 	CDC		m_dcBack;	// backbuffer device context
@@ -70,18 +72,19 @@ protected:
 	int		m_iCurColor;	// color of current ellipse, as a palette index
 	int		m_nChanMask;	// color channel mask of current ellipse
 	int		m_nRadius;		// radius of current ellipse
-	int		m_nTimerPeriod;	// timer period in milliseconds
 	RGBQUAD	m_clrStart;		// starting color for tweening
 	RGBQUAD	m_clrTarget;	// target color for tweening
+	int		m_nRandSeed;	// random number seed
+	int		m_nTimerPeriod;	// timer period in milliseconds
+	int		m_nSpeed;		// expansion/contraction speed, in pixels per tick
 	bool	m_bContracting;	// true if ellipse is contracting
 	bool	m_bIsFullScreen;	// true if full screen
 	bool	m_bIsPaused;	// true if paused
 	bool	m_bSingleStep;	// true if advancing by one frame while paused
 	bool	m_bFreshStart;	// true if backbuffer was recreated
 	int		m_nLaunchType;	// launch app in full screen mode or maximized; see enum
-	int		m_nSpeed;		// expansion/contraction speed, in pixels per tick
-	LONGLONG	m_nFrameCount;	// frame counter for capture
-	LONGLONG	m_nPrevFrameCount;	// for monitoring frame rate
+	DWORD	m_nFrameCount;	// frame counter for capture
+	DWORD	m_nPrevFrameCount;	// for monitoring frame rate
 	CBenchmark	m_bmFrameTimer;	// for monitoring frame rate
 	CStatistics	m_stat;		// for performance monitoring
 
@@ -102,6 +105,42 @@ protected:
 
 	virtual BOOL OnInitDialog();
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
+
+	// musical accompaniment
+
+	enum {	// continuous controller numbers
+		CC_VOLUME			= 71,	// Combinator Control 1 -> Line Mixer Channel 1 Volume
+		CC_PAN				= 72,	// Combinator Control 2 -> Line Mixer Channel 1 pan
+		CC_AMP_ENV_ATTACK	= 73,	// Combinator Control 3 -> NN-19 Amplitude Envelope Attack
+		CC_AMP_ENV_RELEASE	= 74,	// Combinator Control 4 -> NN-19 Amplitude Envelope Release
+		CC_AMP_VEL_AMOUNT	= 2,	// Combinator Breath -> NN-19 Amplitude Velocity Amount
+	};
+	enum {
+		MF_TIMEBASE = 120,		// MIDI file timebase in ticks per quarter note
+		MF_TEMPO = 120,			// MIDI file tempo in beats per minute
+	};
+	CMidiOut	m_midiOut;		// MIDI output device
+	BYTE	m_arrColorNote[COLORS];	// each color's note
+	BYTE	m_arrChanNote[COLORS];	// each MIDI channel's note
+	BYTE	m_arrChanVolume[COLORS];	// each MIDI channel's volume
+	int		m_nCurMidiChan;		// current MIDI channel
+	int		m_nChanCycles;		// number of cycles through all channels
+	bool	m_bIsMidiExport;	// true if exporting a MIDI file; otherwise live MIDI
+	BYTE	m_nPrevNote;		// previous note
+	CMidiFile::CMidiEventArray	m_arrMidiEvent[COLORS];	// array of MIDI events for each channel
+	CStdioFile	m_fLog;			// log file
+
+	void	MakeScale(int nStartNote);
+	void	PrintScale();
+	bool	MidiOpen();
+	void	MidiInit();
+	void	MidiClose();
+	void	MidiStartDraw();
+	void	MidiContinueDraw(double fPos);
+	void	MidiOut(int nCmd, int nChan, int nP1, int nP2);
+	static DWORD	GetFrameTick(int iFrame);
+	void	MidiFileInit();
+	void	WriteMidiFile(LPCTSTR pszPath);
 
 	// Generated message map functions
 	DECLARE_MESSAGE_MAP()
