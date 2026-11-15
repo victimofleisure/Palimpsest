@@ -52,6 +52,8 @@ CPalimpsestDraw::CPalimpsestDraw()
 	m_iShownBank = 0;
 	m_bContracting = false;
 	m_bFreshStart = false;
+	m_bIsPaused = false;
+	m_bSingleStep = false;
 	m_nFrames = 0;
 	m_fPrevTime = 0;
 	m_aFrameBenchmark.SetGrowBy(BENCHMARK_GROW_BY);
@@ -74,6 +76,16 @@ void CPalimpsestDraw::SetParams(const CCmdLineParams& params)
 {
 	ASSERT(m_pThread == NULL);	// only safe before thread is launched
 	CCmdLineParams::operator=(params);
+}
+
+bool CPalimpsestDraw::Pause(bool bEnable)
+{
+	return PushCommand(CRenderCmd(RC_PAUSE, bEnable));
+}
+
+bool CPalimpsestDraw::SingleStep()
+{
+	return PushCommand(CRenderCmd(RC_SINGLE_STEP));
 }
 
 bool CPalimpsestDraw::Create(HWND hWnd, CWnd* pNotifyWnd)
@@ -140,6 +152,7 @@ void CPalimpsestDraw::DestroyUserResources()
 	m_pParameters.Release();
 	m_pRasterState.Release();
 	m_pWhiteBrush.Release();
+	m_pGradientBrush.Release();
 	OnPreResize();
 	if (m_bThreadExit)	// if thread exiting
 		CoUninitialize();	// needed for WIC
@@ -190,7 +203,7 @@ bool CPalimpsestDraw::OnResize()
 	// display frequency can potentially be 0 or 1, indicating default refresh rate
 	if (!GetDisplayFrequency(nDisplayFreq) || nDisplayFreq <= 1)
 		nDisplayFreq = 60;	// fall back to a reasonable default
-	// convert diameter growth in screen heights/sec to radius growth in DIPs/frame
+	// convert diameter growth in window heights/sec to radius growth in DIPs/frame
 	m_fRadiusStep = m_fSpeed * desc.Height / (2 * nDisplayFreq);
 	ResetGeometry();
 	D3D11_VIEWPORT viewport = {0, 0, float(desc.Width), float(desc.Height), 0, 1};
@@ -202,6 +215,11 @@ bool CPalimpsestDraw::OnResize()
 		ClearBank(m_aBank[iBank]);	// clear bank
 	}
 	return CreateCoverageBuffer(m_coverage, szFrame);
+}
+
+inline double CPalimpsestDraw::Exponential(double fVal, double fPower)
+{
+	return (pow(fPower, fVal) - 1) / (fPower - 1);
 }
 
 bool CPalimpsestDraw::OnDraw()
@@ -243,8 +261,37 @@ bool CPalimpsestDraw::OnDraw()
 		m_bContracting = (rand() & 1) != 0;	// randomly select expansion or contraction
 		if (m_midiOut.IsOpen())
 			MidiStartDraw();
+		if (m_bUseGradient) {	// if using gradient brush
+			const double fPower = 0.1;
+			double	fNormRand = rand() / double(RAND_MAX);
+			double	fGradientCoreFrac = Exponential(fNormRand, fPower);
+			// stops array is constant except for middle stop's position
+			static	D2D1_GRADIENT_STOP	aStops[] = {
+				{0, D2D1::ColorF(1, 1, 1, 1)},
+				{0, D2D1::ColorF(1, 1, 1, 1)},
+				{1, D2D1::ColorF(1, 1, 1, 0)}
+			};
+			aStops[1].position = DTF(fGradientCoreFrac);
+			CComPtr<ID2D1GradientStopCollection> pStops;
+			CHECK(m_pD2Context->CreateGradientStopCollection(
+				aStops, _countof(aStops), &pStops));
+			static const D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES propsGrad = {};
+			m_pGradientBrush.Release();
+			CHECK(m_pD2Context->CreateRadialGradientBrush(
+				propsGrad, pStops, &m_pGradientBrush));
+		}
 	}
-	m_iEllipseCurFrame++;
+	bool	bAdvancing = true;
+	if (m_bIsPaused) {	// if paused
+		if (m_bSingleStep) {	// if single step requested
+			m_bSingleStep = false;	// clear single step flag
+		} else {	// really paused
+			bAdvancing = false;
+		}
+	}
+	if (bAdvancing) {
+		m_iEllipseCurFrame++;
+	}
 	double fPos = double(m_iEllipseCurFrame) / m_nEllipseFrames;
 	double fEasedPos = EaseOut(fPos, 0.3);
 	double fBidirPos = m_bContracting ? 1.0 - fEasedPos : fEasedPos;
@@ -284,9 +331,31 @@ void CPalimpsestDraw::OnError(HRESULT hr, LPCSTR pszSrcFileName, int nLineNum, L
 	theApp.OnError(hr, pszSrcFileName, nLineNum, pszSrcFileDate);
 }
 
+void CPalimpsestDraw::OnPause(bool bEnable)
+{
+	m_bIsPaused = bEnable;
+}
+
+void CPalimpsestDraw::OnSingleStep()
+{
+	if (m_bIsPaused) {
+		m_bSingleStep = true;
+	}
+}
+
 void CPalimpsestDraw::OnRenderCommand(const CRenderCmd& cmd)
 {
-	printf("OnRenderCommand %d %d %llx\n", cmd.m_nCmd, cmd.m_nParam, cmd.m_prop);
+//	printf("OnRenderCommand %d %d %llx\n", cmd.m_nCmd, cmd.m_nParam, cmd.m_prop);
+	switch (cmd.m_nCmd) {
+	case RC_PAUSE:
+		OnPause(cmd.m_nParam != 0);
+		break;
+	case RC_SINGLE_STEP:
+		OnSingleStep();
+		break;
+	default:
+		NODEFAULTCASE;
+	}
 }
 
 CPalimpsestDraw::CStateBank::CStateBank()
@@ -526,18 +595,29 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 		if (FAILED(hResult))
 			CHECK(hResult);
 	}
+	ID2D1Brush*	pBrush;	// pointer to solid or gradient brush
+	if (m_bUseGradient) {	// if using gradient brush
+		float rx = state.bContracting ? state.fOuterRadiusX : state.fRadiusX;
+		float ry = state.bContracting ? state.fOuterRadiusY : state.fRadiusY;
+		m_pGradientBrush->SetCenter(D2D1::Point2F(state.fCenterX, state.fCenterY));
+		m_pGradientBrush->SetRadiusX(max(1.0f, rx));
+		m_pGradientBrush->SetRadiusY(max(1.0f, ry));
+		pBrush = m_pGradientBrush;
+	} else {	// use solid brush
+		pBrush = m_pWhiteBrush;
+	}
 	m_pD2Context->BeginDraw();
 	m_pD2Context->Clear(D2D1::ColorF(0, 0, 0, 0));
 	if (state.bContracting) {
 		if (state.fRadiusX <= 0 || state.fRadiusY <= 0) {
 			m_pD2Context->FillEllipse(D2D1::Ellipse(D2D1::Point2F(state.fCenterX, state.fCenterY),
-				state.fOuterRadiusX, state.fOuterRadiusY), m_pWhiteBrush);
+				state.fOuterRadiusX, state.fOuterRadiusY), pBrush);
 		} else if (pRing) {
-			m_pD2Context->FillGeometry(pRing, m_pWhiteBrush);
+			m_pD2Context->FillGeometry(pRing, pBrush);
 		}
 	} else if (state.fRadiusX > 0 && state.fRadiusY > 0) {
 		m_pD2Context->FillEllipse(D2D1::Ellipse(D2D1::Point2F(state.fCenterX, state.fCenterY),
-			state.fRadiusX, state.fRadiusY), m_pWhiteBrush);
+			state.fRadiusX, state.fRadiusY), pBrush);
 	}
 	HRESULT hResult = m_pD2Context->EndDraw();
 	m_pD2Context->SetTarget(NULL);

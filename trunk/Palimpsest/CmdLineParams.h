@@ -24,8 +24,9 @@ public:
 
 // Public data
 	bool	m_bStartFullScreen;	// true if starting in full screen mode
+	bool	m_bUseGradient;		// true if using gradient brush
 	UINT	m_nRandSeed;		// starting point for random number generation
-	double	m_fSpeed;			// animation speed in screen heights per second
+	double	m_fSpeed;			// animation speed in window heights per second
 	int		m_nMidiOut;			// output MIDI device index
 
 // Attributes

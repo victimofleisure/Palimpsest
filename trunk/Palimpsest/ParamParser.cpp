@@ -69,6 +69,11 @@ CONVERSION_FUNC_DEF(LONG, stoi);
 CONVERSION_FUNC_DEF(float, stof);
 CONVERSION_FUNC_DEF(double, stof);
 
+template<> void CParamParser::Convert(LPCTSTR pszParam, bool& val)
+{
+	val = std::stoi(pszParam) != 0;
+}
+
 template<typename T> void CParamParser::Scan(LPCTSTR pszParam, T& val)
 {
 	Convert(pszParam, val);
@@ -146,6 +151,9 @@ void CParamParser::ParseParam(const TCHAR* pszParam, BOOL bFlag, BOOL bLast)
 					break;
 				case FLAG_speed:
 					Scan(pszParam, m_fSpeed);
+					break;
+				case FLAG_gradient:
+					Scan(pszParam, m_bUseGradient);
 					break;
 				case FLAG_midiout:
 					Scan(pszParam, m_nMidiOut);

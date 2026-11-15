@@ -16,7 +16,8 @@
 PARAMDEF(help)			// display help
 PARAMDEF(fullscr)		// start application in full screen mode
 PARAMDEF(seed)			// starting point for random number generation
-PARAMDEF(speed)			// animation speed in screen heights per second
+PARAMDEF(speed)			// animation speed in window heights per second
+PARAMDEF(gradient)		// non-zero to use gradient brush
 PARAMDEF(midiout)		// output MIDI device index
 PARAMDEF(license)		// display the license
 

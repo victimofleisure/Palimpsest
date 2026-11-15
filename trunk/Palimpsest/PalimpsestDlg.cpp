@@ -35,6 +35,7 @@ CPalimpsestDlg::CPalimpsestDlg(CWnd* pParent /*=NULL*/)
 	m_bIsDrawReady = false;
 	m_bIsFullScreen = false;
 	m_bIsFullScreenPending = false;
+	m_bIsPaused = false;
 }
 
 bool CPalimpsestDlg::CustomizeSystemMenu()
@@ -72,6 +73,21 @@ void CPalimpsestDlg::FullScreen(bool bEnable)
 	if (!theApp.m_rt.FullScreen(bEnable)) {	// queue mode switch; if queueing fails
 		m_bIsFullScreenPending = false;	// reset mode switch
 	}
+}
+
+void CPalimpsestDlg::Pause(bool bEnable)
+{
+	if (bEnable == m_bIsPaused)	// if already in requested state
+		return;	// nothing to do
+	if (theApp.m_rt.Pause(bEnable))
+		m_bIsPaused = bEnable;
+}
+
+void CPalimpsestDlg::SingleStep()
+{
+	if (!m_bIsPaused)	// if not paused
+		return;	// nothing to do
+	theApp.m_rt.SingleStep();
 }
 
 // CPalimpsestDlg overrides
@@ -120,6 +136,14 @@ BOOL CPalimpsestDlg::PreTranslateMessage(MSG* pMsg)
 				FullScreen(false);
 				return true;
 			}
+			break;
+		case VK_SPACE:
+			if (GetKeyState(VK_CONTROL) & GKS_DOWN) {
+				SingleStep();
+			} else {
+				Pause(!m_bIsPaused);
+			}
+			return true;
 		}
 	}
 	return CDialogEx::PreTranslateMessage(pMsg);

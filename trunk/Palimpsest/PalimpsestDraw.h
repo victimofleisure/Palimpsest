@@ -32,10 +32,12 @@ public:
 	void	SetParams(const CCmdLineParams& params);
 
 // Commands
+	bool	Pause(bool bEnable);
 
 // Operations
 	void	Resize();
 	bool	FullScreen(bool bEnable);
+	bool	SingleStep();
 
 protected:
 // Constants
@@ -44,6 +46,10 @@ protected:
 		WEIGHT_TEXTURES = 4,	// four RGBA32_FLOAT textures contain sixteen weights
 		STATE_BANKS = 2,		// committed state and current ellipse result
 		SHADER_RESOURCES = WEIGHT_TEXTURES + 1,	// weights plus coverage
+	};
+	enum {	// drawing commands
+		RC_PAUSE = BASE_RENDER_COMMANDS,	// param: bool, prop: none
+		RC_SINGLE_STEP,			// param: none, prop: none
 	};
 
 // Types
@@ -123,6 +129,7 @@ protected:
 // Data members
 	CStatistics	m_stats;	// statistics for measuring throughput
 	CStateBank	m_aBank[STATE_BANKS];	// array of state banks
+	CShaderParams	m_params;	// shader parameters
 	CCoverageBuffer	m_coverage;	// antialiased coverage mask for current ellipse
 	CComPtr<ID3D11ComputeShader>	m_pUpdateShader;	// update shader
 	CComPtr<ID3D11VertexShader>		m_pVertexShader;	// vertex shader
@@ -130,8 +137,8 @@ protected:
 	CComPtr<ID3D11Buffer>			m_pParameters;	// parameters
 	CComPtr<ID3D11RasterizerState>	m_pRasterState;	// rasterizer state
 	CComPtr<ID2D1SolidColorBrush>	m_pWhiteBrush;	// solid white brush
+	CComPtr<ID2D1RadialGradientBrush>	m_pGradientBrush;	// radial gradient brush
 	D3D11_VIEWPORT	m_viewport;	// viewport
-	CShaderParams	m_params;	// shader parameters
 	CRandList	m_rlColor;	// shuffle for colors
 	CRandList	m_rlChanMask;	// shuffle for color channel masks
 	CPoint	m_ptCenter;		// center point of current ellipse, in DIPs
@@ -145,6 +152,8 @@ protected:
 	int		m_iShownBank;	// index of shown bank
 	bool	m_bContracting;	// true if ellipse is contracting instead of expanding
 	bool	m_bFreshStart;	// true if geometry has been reset due to screen size change
+	bool	m_bIsPaused;	// true if animation is paused
+	bool	m_bSingleStep;	// true to step forward one frame while paused
 	ULONGLONG	m_nFrames;	// number of frames rendered
 	double	m_fPrevTime;	// previous time for measuring throughput
 	CDoubleArray	m_aFrameBenchmark;	// array of per-frame benchmarks for logging
@@ -194,6 +203,10 @@ protected:
 	virtual	bool	OnDraw();
 	virtual void	OnRenderCommand(const CRenderCmd& cmd);
 
+// Command handlers
+	void	OnPause(bool bEnable);
+	void	OnSingleStep();
+
 // Helpers
 	bool	CreateCoverageBuffer(CCoverageBuffer& buffer, CSize szFrame);
 	bool	CreateStateBank(CStateBank& bank, CSize szFrame);
@@ -207,4 +220,5 @@ protected:
 	void	DrawFrame(CStateBank& bank, CCoverageBuffer& mask);
 	void	ResetGeometry();
 	void	LogBenchmarks();
+	static double  Exponential(double fVal, double fPower);
 };

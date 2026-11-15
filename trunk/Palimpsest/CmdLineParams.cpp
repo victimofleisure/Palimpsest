@@ -17,6 +17,7 @@
 CCmdLineParams::CCmdLineParams()
 {
 	m_bStartFullScreen = false;
+	m_bUseGradient = true;
 	m_nRandSeed = 0;
 	m_fSpeed = 2 * 4 * 60 / 1080.0;	// matches original GDI version
 	m_nMidiOut = -1;

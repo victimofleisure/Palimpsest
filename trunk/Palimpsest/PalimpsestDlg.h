@@ -33,6 +33,8 @@ public:
 // Operations
 	void	ShowHelp();
 	void	FullScreen(bool bEnable);
+	void	Pause(bool bEnable);
+	void	SingleStep();
 
 // Implementation
 protected:
@@ -50,6 +52,7 @@ protected:
 	bool	m_bIsDrawReady;
 	bool	m_bIsFullScreen;	// true if in full screen mode
 	bool	m_bIsFullScreenPending;	// true while changing full screen mode
+	bool	m_bIsPaused;		// true while paused
 
 // Overrides
 	virtual BOOL OnInitDialog();

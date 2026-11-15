@@ -10,6 +10,7 @@
         00      02nov26	1.0.00.000
         01      03nov26	1.0.00.001
         02      15nov26	1.0.00.004
+        03      16nov26	1.0.00.005
 
 		DON'T FORGET TO CHANGE VERSION RESOURCE
 
