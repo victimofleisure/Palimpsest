@@ -10,13 +10,13 @@
 		01		30nov07		handle close signal by closing main window
 		02		29jan08		change SetScreenBufferSize arg type to fix warning
 		03		27apr24		replace Redirect with standard file reopen
+        04      22feb25		replace header guard with pragma
 
 		Create a Win32 console and redirect standard I/O to it
 
 */
 
-#ifndef WIN32_CONSOLE_INCLUDED
-#define WIN32_CONSOLE_INCLUDED
+#pragma once
 
 // The Win32Console object creates a Win32 console and redirects standard I/O
 // to it.  This allows a GUI application or DLL to use standard I/O functions
@@ -78,7 +78,5 @@ protected:
 
 inline bool	Win32Console::IsOpen()
 {
-	return(m_IsOpen);
+	return m_IsOpen;
 }
-
-#endif

@@ -48,7 +48,7 @@ BOOL CAboutDlg::OnInitDialog()
 	
 	VS_FIXEDFILEINFO	AppInfo;
 	CVersionInfo::GetFileInfo(AppInfo, NULL);
-	m_Version.SetWindowText(CString(theApp.m_pszAppName) + ' ' + GetVersionString());
+	m_Version.SetWindowText(CString(theApp.m_pszAppName) + ' ' + theApp.GetVersionString());
 	m_License.SetWindowText(LDS(IDS_APP_LICENSE));
 	
 	return TRUE;  // return TRUE unless you set the focus to a control

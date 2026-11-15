@@ -1,4 +1,4 @@
-// Copyleft 2020 Chris Korda
+// Copyleft 2025 Chris Korda
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
 // Software Foundation; either version 2 of the License, or any later version.
@@ -7,9 +7,7 @@
  
 		revision history:
 		rev		date	comments
-        00		29apr20	initial version
-
-		global definitions and inlines
+        00      24oct25	initial version
 
 */
 
@@ -17,8 +15,10 @@
 
 #include "Wrapx64.h"	// ck: special types for supporting both 32-bit and 64-bit
 #include "WObject.h"	// ck: ultra-minimal base class used by many of my objects
-#include "Round.h"		// ck: round floating point to integer
 #include "ArrayEx.h"	// ck: wraps MFC dynamic arrays, adding speed and features
+#include "Round.h"		// ck: round floating point to integer
+#include "Benchmark.h"	// ck: wraps hardware performance counter
+#include <math.h>
 
 // define registry section for settings
 #define REG_SETTINGS _T("Settings")
@@ -34,7 +34,12 @@
 #define NODEFAULTCASE	ASSERT(0)
 
 // load string from resource via temporary object
-#define LDS(x) CString((LPCTSTR)x)
+#define LDS(x) CString(MAKEINTRESOURCE(x))
+
+// ck: define containers for some useful built-in types
+typedef CArrayEx<float, float> CFloatArray;
+typedef CArrayEx<double, double> CDoubleArray;
+typedef CArrayEx<char, char> CCharArray;
 
 // wrapper for formatting system errors
 CString FormatSystemError(DWORD ErrorCode);
@@ -52,7 +57,12 @@ void UpdateMenu(CWnd *pWnd, CMenu *pMenu);
 void DoGenericContextMenu(UINT nIDResource, CPoint point, CWnd* pWnd);
 bool FormatNumberCommas(LPCTSTR pszSrc, CString& sDst, int nPrecision = 0);
 int StringReplaceNoCase(CString& str, LPCTSTR pszOld, LPCTSTR pszNew);
-CString GetVersionString();
+bool ShowListColumnHeaderMenu(CWnd *pWnd, CListCtrl& list, CPoint point);
+HRESULT PromptForFiles(CStringArrayEx& saPath, int nFilters = 0, const COMDLG_FILTERSPEC* pFilter = NULL, int iSelFilter = 0);
+int WildcardDeleteFile(CString sPath);
+void MakeSelectionRange(CIntArrayEx& arrSelection, int iFirstItem, int nItems);
+bool FilesEqual(LPCTSTR pszFile1, LPCTSTR pszFile2);
+bool AttachStdoutToParentConsole();
 
 // data validation method to flunk a control
 void DDV_Fail(CDataExchange* pDX, int nIDC);
@@ -65,6 +75,16 @@ template<typename T> inline void Swap(T& a, T& b)
 	b = tmp;
 }
 
+// sort compare for values of any type that permits LT and GT
+template<class T> int SortCompareTpl(const T& a, const T& b)
+{
+	if (a < b)
+		return -1;
+	if (a > b)
+		return 1;
+	return 0;
+}
+
 // wrap dynamic object creation
 template<typename T> inline bool SafeCreateObject(CRuntimeClass *pRuntimeClass, T*& pObject)
 {
@@ -72,9 +92,6 @@ template<typename T> inline bool SafeCreateObject(CRuntimeClass *pRuntimeClass, 
 	ASSERT(pObject->IsKindOf(pRuntimeClass));
 	return pObject != NULL;	// can be null if class name not found or insufficient memory
 }
-
-#define BENCH_START CBenchmark b;
-#define BENCH_STOP printf("%f\n", b.Elapsed());
 
 // replace AfxGetApp with faster method
 class CPalimpsestApp;
@@ -85,11 +102,34 @@ inline CWinApp *FastGetApp()
 }
 #define AfxGetApp FastGetApp
 
+// define benchmarking macros
+#define BENCH_START CBenchmark b;
+#define BENCH_STOP printf("%f\n", b.Elapsed());
+
+// base ID for dynamic submenus, far above menu resource IDs and below MFC reserved IDs
+#define ID_APP_DYNAMIC_SUBMENU_BASE 0xc800
+
+inline bool IsCloseEnough(double a, double b, double fEpsilon)
+{
+	return fabs(a - b) < fEpsilon;
+}
+
+inline LPTSTR SafeStrDup(LPCTSTR pszSrc)
+{
+	// secure string duplicator that doesn't use any deprecated
+	// methods and returns a copy that can be deleted as usual
+	if (pszSrc != NULL) {	// if source string provided
+		size_t	nBufLen = _tcslen(pszSrc) + 1;	// one extra for null terminator
+		LPTSTR	pszCopy = new TCHAR[nBufLen];	// allocate buffer on heap
+		_tcscpy_s(pszCopy, nBufLen, pszSrc);	// copy string to buffer
+		return pszCopy;	// return copy; caller is responsible for deleting it
+	}
+	return NULL;	// no source string, so no copy either
+}
+
 enum {	// application-wide user window messages, based on WP_APP
 	UWM_FIRST = WM_APP,
-	UWM_HANDLE_DLG_KEY,			// wParam: MSG pointer, lParam: none
 	UWM_DELAYED_CREATE,			// wParam: none, lParam: none
-	UWM_DELAYED_ACTIVATE,		// wParam: none, lParam: none
-	UWM_DELAYED_RESIZE,			// wParam: none, lParam: none
-	UWM_MM_TIMER,				// wParam: none, lParam: none
+	UWM_FULL_SCREEN_CHANGED,	// wParam: bIsFullScreen, lParam: bResult
+	UWM_RENDER_THREAD_EXIT,		// wParam: none, lParam: none
 };

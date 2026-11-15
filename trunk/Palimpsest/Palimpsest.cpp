@@ -18,18 +18,18 @@
 #include "Palimpsest.h"
 #include "PalimpsestDlg.h"
 #include "Win32Console.h"
+#include "StdioFileEx.h"
+#include "PathStr.h"
+#include "ParamParser.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
-
 // CPalimpsestApp
 
 BEGIN_MESSAGE_MAP(CPalimpsestApp, CWinApp)
-	ON_COMMAND(ID_HELP, &CWinApp::OnHelp)
 END_MESSAGE_MAP()
-
 
 // CPalimpsestApp construction
 
@@ -37,11 +37,9 @@ CPalimpsestApp::CPalimpsestApp()
 {
 }
 
-
 // The one and only CPalimpsestApp object
 
 CPalimpsestApp theApp;
-
 
 // CPalimpsestApp initialization
 
@@ -65,39 +63,37 @@ BOOL CPalimpsestApp::InitInstance()
 
 	AfxEnableControlContainer();
 
-	// Create the shell manager, in case the dialog contains
-	// any shell tree view or shell list view controls.
-	CShellManager *pShellManager = new CShellManager;
-
 	// Activate "Windows Native" visual manager for enabling themes in MFC controls
 	CMFCVisualManager::SetDefaultManager(RUNTIME_CLASS(CMFCVisualManagerWindows));
 
-	// Standard initialization
-	// If you are not using these features and wish to reduce the size
-	// of your final executable, you should remove from the following
-	// the specific initialization routines you do not need
-	// Change the registry key under which our settings are stored
 	SetRegistryKey(_T("Anal Software"));
+
+	{
+		CParamParser	parser;
+		TRY {
+			if (!parser.ParseCommandLine())
+				return false;
+		}
+		CATCH (CFileException, e) {
+			e->ReportError();	// report the exception
+			return false;	// failure
+		}
+		END_CATCH
+		m_rt.SetParams(parser);
+	}
+
+	if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
+		AfxMessageBox(IDS_ERR_CANT_INIT_COM);
+		return false;
+	}
 
 	CPalimpsestDlg dlg;
 	m_pMainWnd = &dlg;
 	INT_PTR nResponse = dlg.DoModal();
-	if (nResponse == IDOK)
-	{
-	}
-	else if (nResponse == IDCANCEL)
-	{
-	}
-	else if (nResponse == -1)
+	if (nResponse == -1)
 	{
 		TRACE(traceAppMsg, 0, "Warning: dialog creation failed, so application is terminating unexpectedly.\n");
 		TRACE(traceAppMsg, 0, "Warning: if you are using MFC controls on the dialog, you cannot #define _AFX_NO_MFC_CONTROLS_IN_DIALOGS.\n");
-	}
-
-	// Delete the shell manager created above.
-	if (pShellManager != NULL)
-	{
-		delete pShellManager;
 	}
 
 	// Since the dialog has been closed, return FALSE so that we exit the
@@ -105,3 +101,70 @@ BOOL CPalimpsestApp::InitInstance()
 	return FALSE;
 }
 
+int CPalimpsestApp::ExitInstance()
+{
+	// render thread should already be destroyed by this point
+	m_rt.Destroy();	// but in case not, destroy render thread
+	CoUninitialize();
+	return CWinApp::ExitInstance();
+}
+
+void CPalimpsestApp::OnError(HRESULT hr, LPCSTR pszSrcFileName, int nLineNum, LPCSTR pszSrcFileDate)
+{
+#ifdef _DEBUG
+	printf("%x %s %d %s\n", hr, pszSrcFileName, nLineNum, pszSrcFileDate);
+#endif
+	CString	sSrcFileName(pszSrcFileName);	// convert to Unicode
+	CString	sSrcFileDate(pszSrcFileDate);
+	CString	sErrorMsg;
+	sErrorMsg.Format(_T("Error %d (0x%x) in %s line %d (%s)"), hr, hr,
+		sSrcFileName.GetString(), nLineNum, sSrcFileDate.GetString());
+	sErrorMsg += '\n' + FormatSystemError(hr);
+	WriteLogEntry(sErrorMsg);
+	UINT	nMBFlags = MB_RETRYCANCEL | MB_ICONSTOP;
+	if (AfxMessageBox(sErrorMsg, nMBFlags) == IDCANCEL) {	// if user canceled
+		if (m_pMainWnd != NULL)	// if valid main window pointer
+			PostMessage(m_pMainWnd->m_hWnd, WM_CLOSE, 0, 0);	// exit app
+	}
+}
+
+bool CPalimpsestApp::WriteLogEntry(CString sLogEntry)
+{
+	// This method is callable by worker threads, and access to the log file
+	// is therefore serialized via a critical section. The caller may not be
+	// expecting MFC exceptions, but both CString and CStdioFile throw them,
+	// so the entire method is wrapped in an MFC-style TRY block.
+	TRY {
+		// the intended path is %USERPROFILE%\AppData\Local\AppName\AppName.log
+		CString	sLogFolder;
+		GetLocalAppDataFolder(sLogFolder);
+		if (!CreateFolder(sLogFolder)) {	// if unable to create folder
+			AfxMessageBox(IDS_APP_ERR_CANT_CREATE_APP_DATA_FOLDER);
+			return false;	// failure
+		}
+		CPathStr	sLogPath(sLogFolder);	// start with the log folder
+		sLogPath.Append(m_pszAppName);	// append the application name
+		sLogPath += _T(".log");	// append the log file extension
+		SYSTEMTIME	sysTime;
+		GetSystemTime(&sysTime);
+		CString	sTimestamp;
+		sTimestamp.Format(_T("%04d-%02d-%02d %02d:%02d:%02d.%03d"),	// ISO 8601
+			sysTime.wYear, sysTime.wMonth, sysTime.wDay,
+			sysTime.wHour, sysTime.wMinute, sysTime.wSecond, sysTime.wMilliseconds);
+		sLogEntry.Replace('\n', ' ');	// replace any internal newlines with spaces
+		sLogEntry.Remove('\r');	// remove all internal carriage returns
+		sLogEntry += '\n';	// append a single trailing newline
+		// Enter the critical section as late as possible; we'll exit
+		// it automatically when the lock instance goes out of scope.
+		WCritSec::Lock	lock(m_csErrorLog);	// serialize access to the log file
+		CStdioLogFile	fLog(sLogPath);	// open UTF-8, append, text, commit
+		fLog.WriteString(sTimestamp + ' ' + sLogEntry);	// write the log entry
+		fLog.Flush();	// force any buffered data to be written to the file
+	}
+	CATCH (CFileException, e) {
+		e->ReportError();	// report the exception
+		return false;	// failure
+	}
+	END_CATCH
+	return true;	// success
+}

@@ -9,8 +9,7 @@
 		rev		date	comments
         00      02nov26	1.0.00.000
         01      03nov26	1.0.00.001
-		02		05nov26	1.0.00.002
-		03		06nov26	1.0.00.003
+        02      15nov26	1.0.00.004
 
 		DON'T FORGET TO CHANGE VERSION RESOURCE
 
