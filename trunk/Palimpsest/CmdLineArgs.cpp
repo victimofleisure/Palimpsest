@@ -12,14 +12,17 @@
 */
 
 #include "stdafx.h"
-#include "CmdLineParams.h"
+#include "CmdLineArgs.h"
 
-CCmdLineParams::CCmdLineParams()
+CCmdLineArgs::CCmdLineArgs()
 {
 	m_bStartFullScreen = false;
 	m_bUseGradient = true;
 	m_nRandSeed = 0;
 	m_fSpeed = 2 * 4 * 60 / 1080.0;	// matches original GDI version
 	m_nMidiOut = -1;
+	m_szRecFrameSize = CSize(1920, 1080);
+	m_fRecFrameRate = 60;
+	m_nRecDuration = 60;
 }
 

@@ -79,9 +79,6 @@
     <ClCompile Include="HelpDlg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CmdLineParams.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="MidiWrap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -95,6 +92,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Diatonic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D2DHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CmdLineArgs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -195,9 +198,6 @@
     <ClInclude Include="HelpDlg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CmdLineParams.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Midi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -226,6 +226,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="HeptatonicDef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D2DHelper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CmdLineArgs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

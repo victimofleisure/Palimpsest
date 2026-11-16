@@ -21,6 +21,7 @@
 #include "AboutDlg.h"
 #include "ProgressDlg.h"
 #include "HelpDlg.h"
+#include "PathStr.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -88,6 +89,30 @@ void CPalimpsestDlg::SingleStep()
 	if (!m_bIsPaused)	// if not paused
 		return;	// nothing to do
 	theApp.m_rt.SingleStep();
+}
+
+bool CPalimpsestDlg::Export()
+{
+	if (!theApp.m_rt.CreateExport())
+		return false;
+	CProgressDlg	dlgProgress;
+	if (!dlgProgress.Create())
+		return false;
+	UINT	nFrames = theApp.m_args.m_nRecDuration;
+	dlgProgress.SetRange(0, nFrames);
+	for (UINT iFrame = 0; iFrame < nFrames; iFrame++) {	// for each frame
+		dlgProgress.SetPos(iFrame);
+		if (dlgProgress.Canceled())
+			return false;
+		CString	sFileName;
+		sFileName.Format(_T("img%06d"), iFrame);
+		CPathStr sPath(theApp.m_args.m_sRecFolderPath);
+		sPath.Append(sFileName + _T(".png"));
+		if (!theApp.m_rt.ExportFrame(sPath))
+			return false;
+	}
+	theApp.m_rt.WriteMidiFile(_T("palimpsest.mid"));
+	return true;
 }
 
 // CPalimpsestDlg overrides
@@ -236,10 +261,16 @@ LRESULT CPalimpsestDlg::OnDelayedCreate(WPARAM wParam, LPARAM lParam)
 {
 	UNREFERENCED_PARAMETER(wParam);
 	UNREFERENCED_PARAMETER(lParam);
-	if (theApp.m_rt.Create(m_hWnd, this)) {	// create render thread
-		m_bIsDrawReady = true;
-	} else {	// create failed
+	if (!theApp.m_args.m_sRecFolderPath.IsEmpty()) {	// if exporting
+		Export();	// do the export; handles its own errors
+		theApp.m_rt.Destroy();	// clean up resources unconditionally
 		EndDialog(IDOK);	// close dialog
+	} else {	// normal launch
+		if (theApp.m_rt.Create(m_hWnd, this)) {	// create render thread
+			m_bIsDrawReady = true;
+		} else {	// create failed
+			EndDialog(IDOK);	// close dialog
+		}
 	}
 	return 0;
 }

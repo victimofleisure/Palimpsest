@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      13nov26	initial version
+        01      16nov26	add export
 
 */
 
@@ -18,6 +19,7 @@
 #include "Easing.h"
 #include "Midi.h"
 #include "Note.h"
+#include "D2DHelper.h"
 
 #define DTF(x) static_cast<float>(x)
 
@@ -28,13 +30,6 @@
 #define LOG_BENCHMARKS		0		// non-zero to write benchmarks in app's log file
 #define BENCHMARK_GROW_BY	7200	// number of samples by which benchmark array grows
 #define STATISTICS_FRAMES	120		// number of frames to accumulate statistics over
-
-#define EXPORT_IMAGE_SEQ	0		// non-zero to export an image sequence
-#define EXPORT_FRAME_RATE	60		// export frame rate in frames per second
-#define EXPORT_FRAME_COUNT	19691	// export duration in frames
-#define EXPORT_FRAME_SIZE	CSize(1920, 1080)	// export frame size in pixels
-#define EXPORT_FOLDER_PATH	_T("E:\\temp\\video\\Palimpsest\\")	// export folder path
-#define EXPORT_MIDI_ONLY	0		// non-zero to export MIDI only
 #define LOG_CYCLE_TIMES		0		// non-zero to write cycle timing to log file
 
 CPalimpsestDraw::CPalimpsestDraw()
@@ -54,6 +49,7 @@ CPalimpsestDraw::CPalimpsestDraw()
 	m_bFreshStart = false;
 	m_bIsPaused = false;
 	m_bSingleStep = false;
+	m_bIsExport = false;
 	m_nFrames = 0;
 	m_fPrevTime = 0;
 	m_aFrameBenchmark.SetGrowBy(BENCHMARK_GROW_BY);
@@ -64,7 +60,6 @@ CPalimpsestDraw::CPalimpsestDraw()
 	ZeroMemory(m_arrChanVolume, sizeof(m_arrChanVolume));
 	m_nCurMidiChan = 0;
 	m_nChanCycles = 0;
-	m_bIsMidiExport = false;
 	m_nPrevNote = 0xff;
 }
 
@@ -72,10 +67,10 @@ CPalimpsestDraw::~CPalimpsestDraw()
 {
 }
 
-void CPalimpsestDraw::SetParams(const CCmdLineParams& params)
+void CPalimpsestDraw::SetCmdLineArgs(const CCmdLineArgs& args)
 {
 	ASSERT(m_pThread == NULL);	// only safe before thread is launched
-	CCmdLineParams::operator=(params);
+	m_args = args;
 }
 
 bool CPalimpsestDraw::Pause(bool bEnable)
@@ -104,7 +99,11 @@ void CPalimpsestDraw::ResetGeometry()
 void CPalimpsestDraw::Destroy()
 {
 	m_bThreadExit = true;	// request render thread to exit
-	DestroyThread();	// destroy render thread
+	if (m_bIsExport) {	// if exporting
+		CD3DDevCtx::Destroy();
+	} else {	// normal run
+		DestroyThread();	// destroy render thread
+	}
 #if LOG_BENCHMARKS
 	LogBenchmarks();
 #endif
@@ -160,7 +159,7 @@ void CPalimpsestDraw::DestroyUserResources()
 
 bool CPalimpsestDraw::OnThreadCreate()
 {
-	srand(m_nRandSeed);	// set random seed in render thread
+	srand(m_args.m_nRandSeed);	// set random seed in render thread
 	if (MATCH_REFERENCE) {
 		// to match the reference output, we must account for two extra CreateBackbuffer
 		// calls during window sizing, each of which calls rand three times for each color
@@ -170,12 +169,12 @@ bool CPalimpsestDraw::OnThreadCreate()
 	}
 	CHECK(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED));	// needed for WIC
 	m_params.RandomizePalette();
-	if (m_bStartFullScreen) {	// if full screen launch requested
+	if (m_args.m_bStartFullScreen) {	// if full screen launch requested
 		if (!OnSetFullScreen(true))
 			return false;
 	}
 	m_fPrevTime = CBenchmark::Time();
-	if (m_nMidiOut >= 0)
+	if (m_args.m_nMidiOut >= 0)
 		MidiOpen();
 	return true;
 }
@@ -197,18 +196,25 @@ bool CPalimpsestDraw::OnResize()
 {
 	D3D11_TEXTURE2D_DESC desc;
 	m_pBackBuffer->GetDesc(&desc);
-	m_params.nWidth = desc.Width;
-	m_params.nHeight = desc.Height;
 	DWORD	nDisplayFreq;
 	// display frequency can potentially be 0 or 1, indicating default refresh rate
 	if (!GetDisplayFrequency(nDisplayFreq) || nDisplayFreq <= 1)
 		nDisplayFreq = 60;	// fall back to a reasonable default
-	// convert diameter growth in window heights/sec to radius growth in DIPs/frame
-	m_fRadiusStep = m_fSpeed * desc.Height / (2 * nDisplayFreq);
-	ResetGeometry();
-	D3D11_VIEWPORT viewport = {0, 0, float(desc.Width), float(desc.Height), 0, 1};
-	m_viewport = viewport;
 	CSize szFrame(desc.Width, desc.Height);
+	return CreateFrameResources(szFrame, nDisplayFreq);
+}
+
+bool CPalimpsestDraw::CreateFrameResources(CSize szFrame, double fFrameRate)
+{
+	ASSERT(szFrame.cx && szFrame.cy && fFrameRate > 0);
+	m_params.nWidth = szFrame.cx;
+	m_params.nHeight = szFrame.cy;
+	m_fFrameRate = fFrameRate;
+	// convert diameter growth in window heights/sec to radius growth in DIPs/frame
+	m_fRadiusStep = m_args.m_fSpeed * szFrame.cy / (2 * fFrameRate);
+	ResetGeometry();
+	D3D11_VIEWPORT viewport = {0, 0, float(szFrame.cx), float(szFrame.cy), 0, 1};
+	m_viewport = viewport;
 	for (int iBank = 0; iBank < STATE_BANKS; iBank++) {	// for each state bank
 		if (!CreateStateBank(m_aBank[iBank], szFrame))	// create bank
 			return false;
@@ -259,9 +265,9 @@ bool CPalimpsestDraw::OnDraw()
 		m_clrStart = m_params.arrPalette[m_params.iCurColor];	// start color is current color
 		m_clrTarget.Randomize();	// choose a random destination color
 		m_bContracting = (rand() & 1) != 0;	// randomly select expansion or contraction
-		if (m_midiOut.IsOpen())
+		if (m_midiOut.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
 			MidiStartDraw();
-		if (m_bUseGradient) {	// if using gradient brush
+		if (m_args.m_bUseGradient) {	// if using gradient brush
 			const double fPower = 0.1;
 			double	fNormRand = rand() / double(RAND_MAX);
 			double	fGradientCoreFrac = Exponential(fNormRand, fPower);
@@ -314,7 +320,7 @@ bool CPalimpsestDraw::OnDraw()
 		m_iCommittedBank = m_iShownBank;	// commit current bank
 		m_iEllipseCurFrame = -1;	// trigger new ellipse on next frame
 	}
-	if (m_midiOut.IsOpen())
+	if (m_midiOut.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
 		MidiContinueDraw(fEasedPos);
 	m_nFrames++;
 #if DISPLAY_BENCHMARKS && defined(_DEBUG)
@@ -596,7 +602,7 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 			CHECK(hResult);
 	}
 	ID2D1Brush*	pBrush;	// pointer to solid or gradient brush
-	if (m_bUseGradient) {	// if using gradient brush
+	if (m_args.m_bUseGradient) {	// if using gradient brush
 		float rx = state.bContracting ? state.fOuterRadiusX : state.fRadiusX;
 		float ry = state.bContracting ? state.fOuterRadiusY : state.fRadiusY;
 		m_pGradientBrush->SetCenter(D2D1::Point2F(state.fCenterX, state.fCenterY));
@@ -714,7 +720,7 @@ void CPalimpsestDraw::PrintScale()
 
 bool CPalimpsestDraw::MidiOpen()
 {
-	if (MIDI_FAILED(m_midiOut.Open(m_nMidiOut, NULL, NULL, 0))) {
+	if (MIDI_FAILED(m_midiOut.Open(m_args.m_nMidiOut, NULL, NULL, 0))) {
 		AfxMessageBox(_T("Can't open MIDI output device"));
 		return false;
 	}
@@ -725,7 +731,7 @@ bool CPalimpsestDraw::MidiOpen()
 void CPalimpsestDraw::MidiFileInit()
 {
 	// forces creation of event blocks in Reason
-	ASSERT(m_bIsMidiExport);
+	ASSERT(m_bIsExport);
 	for (int iChan = 0; iChan < COLORS; iChan++) {
 		MidiOut(CONTROL, iChan, CC_VOLUME, 0);
 		MidiOut(CONTROL, iChan, CC_PAN, 0);
@@ -813,25 +819,25 @@ void CPalimpsestDraw::MidiContinueDraw(double fPos)
 DWORD CPalimpsestDraw::GetFrameTick(ULONGLONG iFrame)
 {
 	const double	fTicksPerSec = (double(MF_TEMPO) / 60) * MF_TIMEBASE;
-	double fFrameTimeSecs = (1.0 / EXPORT_FRAME_RATE) * iFrame;
+	double fFrameTimeSecs = (1.0 / m_fFrameRate) * iFrame;
 	return Round(fTicksPerSec * fFrameTimeSecs);
 }
 
 void CPalimpsestDraw::MidiOut(int nCmd, int nChan, int nP1, int nP2)
 {
 	DWORD	dwMsg = MakeMidiMsg(nCmd, nChan, nP1, nP2);
-	if (m_bIsMidiExport) {
+	if (m_bIsExport) {	// if exporting, store event
 		DWORD	dwTime = GetFrameTick(m_nFrames);
 		CMidiFile::MIDI_EVENT	evt = {dwTime, dwMsg};
 		m_arrMidiEvent[nChan].Add(evt);
-	} else {
+	} else {	// output to MIDI device
 		m_midiOut.OutShortMsg(dwMsg);
 	}
 }
 
 void CPalimpsestDraw::WriteMidiFile(LPCTSTR pszPath)
 {
-	ASSERT(m_bIsMidiExport);
+	ASSERT(m_bIsExport);	// only valid in export mode
 	CMidiFile	fMidi(pszPath, CFile::modeCreate | CFile::modeWrite);
 	DWORD	dwDuration = GetFrameTick(m_nFrames);
 	fMidi.WriteHeader(COLORS, MF_TIMEBASE, MF_TEMPO, dwDuration, NULL, NULL, NULL);
@@ -852,4 +858,30 @@ void CPalimpsestDraw::WriteMidiFile(LPCTSTR pszPath)
 		fMidi.WriteTrack(arrEvt);
 		fText.WriteString(_T("\n"));
 	}
+}
+
+bool CPalimpsestDraw::CreateExport()
+{
+	ASSERT(m_pSwapChain == NULL);	// don't call Create when exporting
+	// override problematic command line parameters
+	m_args.m_bStartFullScreen = false;	// no full screen
+	m_args.m_nMidiOut = -1;	// no MIDI output device
+	m_bIsExport = true;
+	if (!CreateOffscreen())
+		return false;
+	if (!OnThreadCreate())
+		return false;
+	CSize	szFrame(m_args.m_szRecFrameSize);
+	double	fFrameRate = m_args.m_fRecFrameRate;
+	if (!CreateFrameResources(szFrame, fFrameRate))
+		return false;
+	if (!CreateExportResources(szFrame))
+		return false;
+	return true;
+}
+
+bool CPalimpsestDraw::ExportFrame(LPCTSTR pszPath)
+{
+	OnDraw();
+	return WriteFrame(pszPath);
 }

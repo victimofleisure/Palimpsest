@@ -13,9 +13,9 @@
 
 #pragma once
 
-#include "CmdLineParams.h"
+#include "CmdLineArgs.h"
 
-class CParamParser : public CCmdLineParams, public CCommandLineInfo {
+class CParamParser : public CCmdLineArgs, public CCommandLineInfo {
 public:
 // Construction
 	CParamParser();
@@ -49,6 +49,7 @@ protected:
 	bool	m_bError;			// true if error occurred
 	bool	m_bShowHelp;		// true if we should show help
 	bool	m_bShowLicense;		// true if we should show licence
+	CString	m_sHelpMarkdownPath;	// path for help markdown output file
 
 // Overrideables
 	virtual void OnError(int nErrID, LPCTSTR pszParam, LPCTSTR pszErrInfo = NULL);

@@ -158,6 +158,21 @@ void CParamParser::ParseParam(const TCHAR* pszParam, BOOL bFlag, BOOL bLast)
 				case FLAG_midiout:
 					Scan(pszParam, m_nMidiOut);
 					break;
+				case FLAG_record:
+					m_sRecFolderPath = pszParam;
+					break;
+				case FLAG_recsize:
+					Scan(pszParam, m_szRecFrameSize, CSize(1, 1), CSize(INT_MAX, INT_MAX));
+					break;
+				case FLAG_recrate:
+					Scan(pszParam, m_fRecFrameRate, 1e-3f, 1e3f);	// avoid divide by zero
+					break;
+				case FLAG_recdur:
+					Scan(pszParam, m_nRecDuration);
+					break;
+				case FLAG_markdown:
+					m_sHelpMarkdownPath = pszParam;
+					break;
 				default:
 					NODEFAULTCASE;	// logic error
 				}
@@ -197,6 +212,10 @@ bool CParamParser::ParseCommandLine()
 			CAboutDlg	dlg;	// show dialog instead
 			dlg.DoModal();
 		}
+		return false;	// exit app
+	}
+	if (!m_sHelpMarkdownPath.IsEmpty()) {	// if help markdown requested
+		WriteHelpMarkdown(m_sHelpMarkdownPath);	// write help markdown
 		return false;	// exit app
 	}
 	if (!m_nRandSeed)	// if random seed not specified

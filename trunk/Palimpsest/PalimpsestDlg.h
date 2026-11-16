@@ -31,10 +31,6 @@ public:
 // Attributes
 
 // Operations
-	void	ShowHelp();
-	void	FullScreen(bool bEnable);
-	void	Pause(bool bEnable);
-	void	SingleStep();
 
 // Implementation
 protected:
@@ -62,6 +58,11 @@ protected:
 
 // Helpers
 	bool	CustomizeSystemMenu();
+	void	ShowHelp();
+	void	FullScreen(bool bEnable);
+	void	Pause(bool bEnable);
+	void	SingleStep();
+	bool	Export();
 
 // Message handlers
 	DECLARE_MESSAGE_MAP()

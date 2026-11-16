@@ -8,17 +8,20 @@
 		rev		date	comments
 		00		15jan25	initial version
 		01		13nov26	rename for Direct3D
+		02		16nov26	add export
 
 */
 
 #include "stdafx.h"
 #include "D3DDevCtx.h"
+#include "D2DHelper.h"
 
 #define CHECK(x) { HRESULT hr = x; if (FAILED(hr)) { OnError(hr, __FILE__, __LINE__, __DATE__); return false; }}
 #define CHECK_VOID(x) { HRESULT hr = x; if (FAILED(hr)) OnError(hr, __FILE__, __LINE__, __DATE__); }
 
 CD3DDevCtx::CD3DDevCtx()
 {
+	m_szExportFrameSize = CSize(0, 0);
 }
 
 void CD3DDevCtx::OnError(HRESULT hr, LPCSTR pszSrcFileName, int nLineNum, LPCSTR pszSrcFileDate)
@@ -65,6 +68,20 @@ bool CD3DDevCtx::Create(HWND hWnd, bool bDebugDevice)
 	if (!CreateUserResources())
 		return false;
 	return Resize();
+}
+
+bool CD3DDevCtx::CreateOffscreen()
+{
+	// create without swap chain and resizing
+	if (!CreateDevice())
+		return false;
+	if (!CreateD2D())
+		return false;
+	if (!OnCreateDevice())
+		return false;
+	if (!CreateUserResources())
+		return false;
+	return true;
 }
 
 bool CD3DDevCtx::CreateDevice(bool bDebugDevice)
@@ -120,6 +137,8 @@ bool CD3DDevCtx::CreateD2D()
 void CD3DDevCtx::Destroy()
 {
 	DestroyUserResources();
+	m_pExportStaging.Release();
+	m_pWICFactory.Release();
 	if (m_pD2Context != NULL)
 		m_pD2Context->SetTarget(NULL);  // unbind target before release
 	if (m_pContext != NULL) {
@@ -213,5 +232,85 @@ bool CD3DDevCtx::GetDisplayFrequency(DWORD& dwFrequency)
 	if (!GetDeviceMode(desc, mode))
 		return false;
 	dwFrequency = mode.dmDisplayFrequency;
+	return true;
+}
+
+bool CD3DDevCtx::CreateBackBuffer(CSize szFrame)
+{
+	ASSERT(m_pDevice != NULL);
+	ASSERT(szFrame.cx > 0 && szFrame.cy > 0);
+	m_pBackView.Release();
+	m_pBackBuffer.Release();
+	D3D11_TEXTURE2D_DESC	desc = {};
+	desc.Width = szFrame.cx;
+	desc.Height = szFrame.cy;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+	desc.CPUAccessFlags = 0;
+	desc.MiscFlags = 0;
+	CHECK(m_pDevice->CreateTexture2D(&desc, NULL, &m_pBackBuffer));
+	CHECK(m_pDevice->CreateRenderTargetView(m_pBackBuffer, NULL, &m_pBackView));
+	return true;
+}
+
+bool CD3DDevCtx::CreateExportResources(CSize szFrame, REFGUID guidContainerFormat)
+{
+	if (!CreateBackBuffer(szFrame))
+		return false;
+	D3D11_TEXTURE2D_DESC desc;
+	m_pBackBuffer->GetDesc(&desc);
+	desc.Usage = D3D11_USAGE_STAGING;
+	desc.BindFlags = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc.MiscFlags = 0;
+	CHECK(m_pDevice->CreateTexture2D(&desc, NULL, &m_pExportStaging));
+	CHECK(m_pWICFactory.CoCreateInstance(CLSID_WICImagingFactory));
+	m_szExportFrameSize = szFrame;
+	m_guidContainerFormat = guidContainerFormat;
+	return true;
+}
+
+bool CD3DDevCtx::WriteFrame(LPCTSTR pszPath)
+{
+	m_pContext->CopyResource(m_pExportStaging, m_pBackBuffer);
+	D3D11_MAPPED_SUBRESOURCE map = {};
+	CHECK(m_pContext->Map(m_pExportStaging, 0, D3D11_MAP_READ, 0, &map));
+	CAutoUnmapResource	unmapStaging(m_pContext, m_pExportStaging);	// dtor unmaps staging
+	BYTE*	pData = static_cast<BYTE*>(map.pData);
+	UINT	nPitch = map.RowPitch;
+	UINT	nWidth = m_szExportFrameSize.cx;
+	UINT	nHeight = m_szExportFrameSize.cy;
+	//
+	//	Create the WIC stream and encoder.
+	//
+	CComPtr<IWICStream>	pWICStream;
+	CHECK(m_pWICFactory->CreateStream(&pWICStream));
+	CHECK(pWICStream->InitializeFromFilename(pszPath, GENERIC_WRITE));	// requires UNICODE
+	CComPtr<IWICBitmapEncoder> pEncoder;
+    CHECK(m_pWICFactory->CreateEncoder(m_guidContainerFormat, NULL, &pEncoder));
+    CHECK(pEncoder->Initialize(pWICStream, WICBitmapEncoderNoCache));
+	//
+	//	Create the WIC frame and set its attributes for our bitmap.
+	//
+	CComPtr<IWICBitmapFrameEncode> pFrame;
+    CHECK(pEncoder->CreateNewFrame(&pFrame, NULL));
+    CHECK(pFrame->Initialize(NULL));
+    CHECK(pFrame->SetSize(nWidth, nHeight));
+	WICPixelFormatGUID formatGUID = GUID_WICPixelFormat32bppBGRA;	// pixel format GUID
+	CHECK(pFrame->SetPixelFormat(&formatGUID));	// set desired pixel format
+	if (formatGUID != GUID_WICPixelFormat32bppBGRA)
+		CHECK(WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT);
+	UINT cbBufferSize = nPitch * nHeight;	// buffer size is pitch times height
+	//
+	//	Write the pixels and commit.
+	//
+	CHECK(pFrame->WritePixels(nHeight, nPitch, cbBufferSize, pData));	// encode frame scanlines
+    CHECK(pFrame->Commit());
+    CHECK(pEncoder->Commit());
 	return true;
 }

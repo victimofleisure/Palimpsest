@@ -13,10 +13,10 @@
 
 #pragma once
 
-class CCmdLineParams {
+class CCmdLineArgs {
 public:
 // Construction
-	CCmdLineParams();
+	CCmdLineArgs();
 
 // Types
 
@@ -28,6 +28,10 @@ public:
 	UINT	m_nRandSeed;		// starting point for random number generation
 	double	m_fSpeed;			// animation speed in window heights per second
 	int		m_nMidiOut;			// output MIDI device index
+	CString	m_sRecFolderPath;	// recording destination folder path
+	CSize	m_szRecFrameSize;	// recording frame size in pixels
+	float	m_fRecFrameRate;	// recording frame rate
+	int		m_nRecDuration;		// recording duration in frames
 
 // Attributes
 

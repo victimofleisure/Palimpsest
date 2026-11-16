@@ -19,6 +19,11 @@ PARAMDEF(seed)			// starting point for random number generation
 PARAMDEF(speed)			// animation speed in window heights per second
 PARAMDEF(gradient)		// non-zero to use gradient brush
 PARAMDEF(midiout)		// output MIDI device index
+PARAMDEF(record)		// recording destination folder path
+PARAMDEF(recsize)		// recording frame size, in pixels
+PARAMDEF(recrate)		// recording frame rate, in frames per second
+PARAMDEF(recdur)		// recording duration, in seconds
+PARAMDEF(markdown)		// write help markdown to the specified file
 PARAMDEF(license)		// display the license
 
 #undef PARAMDEF

@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      13nov26	initial version
+        01      16nov26	add export
 
 */
 
@@ -16,20 +17,21 @@
 #include "RenderThread.h"
 #include "Statistics.h"
 #include "RandList.h"
-#include "CmdLineParams.h"
+#include "CmdLineArgs.h"
 #include "MidiWrap.h"
 #include "MidiFile.h"
 
-class CPalimpsestDraw : public CRenderThread, protected CCmdLineParams {
+class CPalimpsestDraw : public CRenderThread {
 public:
 // Construction
 	CPalimpsestDraw();
 	~CPalimpsestDraw();
 	bool	Create(HWND hWnd, CWnd* pNotifyWnd = NULL);
+	bool	CreateExport();
 	void	Destroy();
 
 // Attributes
-	void	SetParams(const CCmdLineParams& params);
+	void	SetCmdLineArgs(const CCmdLineArgs& args);
 
 // Commands
 	bool	Pause(bool bEnable);
@@ -38,6 +40,8 @@ public:
 	void	Resize();
 	bool	FullScreen(bool bEnable);
 	bool	SingleStep();
+	bool	ExportFrame(LPCTSTR pszPath);
+	void	WriteMidiFile(LPCTSTR pszPath);
 
 protected:
 // Constants
@@ -127,7 +131,7 @@ protected:
 	};
 
 // Data members
-	CStatistics	m_stats;	// statistics for measuring throughput
+	D3D11_VIEWPORT	m_viewport;	// viewport
 	CStateBank	m_aBank[STATE_BANKS];	// array of state banks
 	CShaderParams	m_params;	// shader parameters
 	CCoverageBuffer	m_coverage;	// antialiased coverage mask for current ellipse
@@ -138,7 +142,8 @@ protected:
 	CComPtr<ID3D11RasterizerState>	m_pRasterState;	// rasterizer state
 	CComPtr<ID2D1SolidColorBrush>	m_pWhiteBrush;	// solid white brush
 	CComPtr<ID2D1RadialGradientBrush>	m_pGradientBrush;	// radial gradient brush
-	D3D11_VIEWPORT	m_viewport;	// viewport
+	CCmdLineArgs	m_args;	// command line arguments
+	CStatistics	m_stats;	// statistics for measuring throughput
 	CRandList	m_rlColor;	// shuffle for colors
 	CRandList	m_rlChanMask;	// shuffle for color channel masks
 	CPoint	m_ptCenter;		// center point of current ellipse, in DIPs
@@ -154,8 +159,10 @@ protected:
 	bool	m_bFreshStart;	// true if geometry has been reset due to screen size change
 	bool	m_bIsPaused;	// true if animation is paused
 	bool	m_bSingleStep;	// true to step forward one frame while paused
+	bool	m_bIsExport;	// true if exporting image sequence offline
 	ULONGLONG	m_nFrames;	// number of frames rendered
 	double	m_fPrevTime;	// previous time for measuring throughput
+	double	m_fFrameRate;	// frame rate in frames per second
 	CDoubleArray	m_aFrameBenchmark;	// array of per-frame benchmarks for logging
 
 // Musical accompaniment
@@ -176,7 +183,6 @@ protected:
 	BYTE	m_arrChanVolume[COLORS];	// each MIDI channel's volume
 	int		m_nCurMidiChan;		// current MIDI channel
 	int		m_nChanCycles;		// number of cycles through all channels
-	bool	m_bIsMidiExport;	// true if exporting a MIDI file; otherwise live MIDI
 	BYTE	m_nPrevNote;		// previous note
 	CMidiFile::CMidiEventArray	m_arrMidiEvent[COLORS];	// array of MIDI events for each channel
 
@@ -188,9 +194,8 @@ protected:
 	void	MidiStartDraw();
 	void	MidiContinueDraw(double fPos);
 	void	MidiOut(int nCmd, int nChan, int nP1, int nP2);
-	static DWORD	GetFrameTick(ULONGLONG iFrame);
+	DWORD	GetFrameTick(ULONGLONG iFrame);
 	void	MidiFileInit();
-	void	WriteMidiFile(LPCTSTR pszPath);
 
 // CRenderTarget overrides
 	virtual void	OnError(HRESULT hr, LPCSTR pszSrcFileName, int nLineNum, LPCSTR pszSrcFileDate);
@@ -220,5 +225,6 @@ protected:
 	void	DrawFrame(CStateBank& bank, CCoverageBuffer& mask);
 	void	ResetGeometry();
 	void	LogBenchmarks();
+	bool	CreateFrameResources(CSize szFrame, double fFrameRate);
 	static double  Exponential(double fVal, double fPower);
 };

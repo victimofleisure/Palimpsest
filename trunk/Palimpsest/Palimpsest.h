@@ -45,6 +45,7 @@ public:
 	static bool	IsSpace(TCHAR c);
 
 // Public data
+	CCmdLineArgs	m_args;	// command line arguments
 	CPalimpsestDraw	m_rt;	// render thread
 
 // Implementation

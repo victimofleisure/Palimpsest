@@ -9,6 +9,7 @@
 		00		15jan25	initial version
 		01		12mar25	remove frame size accessor
 		02		13nov26	rename for Direct3D
+		03		16nov26	add export
 
 */
 
@@ -30,12 +31,15 @@ public:
 
 // Operations
 	bool	Create(HWND hWnd, bool bDebugDevice = false);
+	bool	CreateOffscreen();
 	void	Destroy();
 	bool	Resize();
 	bool	SetFullScreen(bool bEnable);
 	bool	GetOutputDesc(DXGI_OUTPUT_DESC& desc);
 	bool	GetAdapterDesc(DXGI_ADAPTER_DESC& desc);
 	bool	GetDisplayFrequency(DWORD& dwFrequency);
+	bool	CreateExportResources(CSize szFrame, REFGUID guidContainerFormat = GUID_ContainerFormatPng);
+	bool	WriteFrame(LPCTSTR pszPath);
 	static bool	GetDisplayDeviceInfo(LPCTSTR pszDevName, DISPLAY_DEVICE& dd);
 	static bool	GetDeviceMode(const DXGI_OUTPUT_DESC& desc, DEVMODE& mode);
 
@@ -57,11 +61,16 @@ protected:
 	CComPtr<IDXGISwapChain1>	m_pSwapChain;	// DXGI swap chain
 	CComPtr<ID3D11Texture2D>	m_pBackBuffer;	// swap chain backbuffer
 	CComPtr<ID3D11RenderTargetView>		m_pBackView;	// backbuffer target view
+	CComPtr<ID3D11Texture2D>	m_pExportStaging;	// staging buffer for export
+	CComPtr<IWICImagingFactory> m_pWICFactory;	// WIC factory for export
+	CSize	m_szExportFrameSize;	// frame size for export
+	GUID	m_guidContainerFormat;	// container format for export
 
 // Helpers
 	bool	CreateDevice(bool bDebugDevice = false);
 	bool	CreateSwapChain(HWND hWnd);
 	bool	CreateD2D();
+	bool	CreateBackBuffer(CSize szFrame);
 };
 
 inline CD3DDevCtx::~CD3DDevCtx()

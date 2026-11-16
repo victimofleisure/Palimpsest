@@ -79,7 +79,8 @@ BOOL CPalimpsestApp::InitInstance()
 			return false;	// failure
 		}
 		END_CATCH
-		m_rt.SetParams(parser);
+		m_args = parser;
+		m_rt.SetCmdLineArgs(parser);
 	}
 
 	if (FAILED(CoInitializeEx(NULL, COINIT_APARTMENTTHREADED))) {
