@@ -15,11 +15,11 @@
 #pragma once
 
 #include "RenderThread.h"
+#include "Palimpsest.h"
 #include "Statistics.h"
 #include "RandList.h"
 #include "CmdLineArgs.h"
-#include "MidiWrap.h"
-#include "MidiFile.h"
+#include "PalimpsestMusic.h"
 
 class CPalimpsestDraw : public CRenderThread {
 public:
@@ -35,11 +35,11 @@ public:
 
 // Commands
 	bool	Pause(bool bEnable);
+	bool	SingleStep();
 
 // Operations
 	void	Resize();
 	bool	FullScreen(bool bEnable);
-	bool	SingleStep();
 	bool	ExportFrame(LPCTSTR pszPath);
 	void	WriteMidiFile(LPCTSTR pszPath);
 
@@ -69,9 +69,11 @@ protected:
 		CComPtr<ID3D11UnorderedAccessView>	m_arrWriteView[WEIGHT_TEXTURES];
 		CSize	m_szFrame;
 
+	// Operations
 		void Destroy();
 
 	private:
+	// Prevent binary copy
 		CStateBank(const CStateBank&);
 		CStateBank& operator=(const CStateBank&);
 	};
@@ -88,37 +90,50 @@ protected:
 		CComPtr<ID2D1Bitmap1>	m_pBitmap;
 		CSize	m_szFrame;
 
+	// Operations
 		void Destroy();
 
 	private:
+	// Prevent binary copy
 		CCoverageBuffer(const CCoverageBuffer&);
 		CCoverageBuffer& operator=(const CCoverageBuffer&);
 	};
 	class CPaletteColor {
 	public:
+	// Public data
 		float fRed;
 		float fGreen;
 		float fBlue;
 		float fAlpha;
-
+	
+	// Construction
 		CPaletteColor();
 		CPaletteColor(float fRedVal, float fGreenVal, float fBlueVal, float fAlphaVal = 1);
+
+	// Operations
 		void	Randomize();
 		void	Tween(const CPaletteColor& clrStart, const CPaletteColor& clrTarget, double fPos);
 	};
+	// parameters shared between C++ and HLSL shaders; layout must match the shader Parameters
+	// constant buffer, whose size must be a multiple of 16 bytes, and must be 16-byte aligned
 	class DECLSPEC_ALIGN(16) CShaderParams {
 	public:
+	// Public data
 		CPaletteColor arrPalette[COLORS];
 		UINT nWidth;
 		UINT nHeight;
 		UINT nChanMask;
 		UINT iCurColor;
 
+	// Construction
 		CShaderParams();
+
+	// Operations
 		void	RandomizePalette();
 	};
 	class CEllipseState {
 	public:
+	// Public data
 		float fCenterX;
 		float fCenterY;
 		float fRadiusX;
@@ -127,6 +142,7 @@ protected:
 		float fOuterRadiusY;
 		bool bContracting;
 
+	// Construction
 		CEllipseState();
 	};
 
@@ -159,43 +175,12 @@ protected:
 	bool	m_bFreshStart;	// true if geometry has been reset due to screen size change
 	bool	m_bIsPaused;	// true if animation is paused
 	bool	m_bSingleStep;	// true to step forward one frame while paused
-	bool	m_bIsExport;	// true if exporting image sequence offline
+	bool	m_bIsExport;	// true if exporting image sequence
 	ULONGLONG	m_nFrames;	// number of frames rendered
 	double	m_fPrevTime;	// previous time for measuring throughput
 	double	m_fFrameRate;	// frame rate in frames per second
 	CDoubleArray	m_aFrameBenchmark;	// array of per-frame benchmarks for logging
-
-// Musical accompaniment
-	enum {	// continuous controller numbers
-		CC_VOLUME			= 71,	// Combinator Control 1 -> Line Mixer Channel 1 Volume
-		CC_PAN				= 72,	// Combinator Control 2 -> Line Mixer Channel 1 pan
-		CC_AMP_ENV_ATTACK	= 73,	// Combinator Control 3 -> NN-19 Amplitude Envelope Attack
-		CC_AMP_ENV_RELEASE	= 74,	// Combinator Control 4 -> NN-19 Amplitude Envelope Release
-		CC_AMP_VEL_AMOUNT	= 2,	// Combinator Breath -> NN-19 Amplitude Velocity Amount
-	};
-	enum {
-		MF_TIMEBASE = 120,		// MIDI file timebase in ticks per quarter note
-		MF_TEMPO = 120,			// MIDI file tempo in beats per minute
-	};
-	CMidiOut	m_midiOut;		// MIDI output device
-	BYTE	m_arrColorNote[COLORS];	// each color's note
-	BYTE	m_arrChanNote[COLORS];	// each MIDI channel's note
-	BYTE	m_arrChanVolume[COLORS];	// each MIDI channel's volume
-	int		m_nCurMidiChan;		// current MIDI channel
-	int		m_nChanCycles;		// number of cycles through all channels
-	BYTE	m_nPrevNote;		// previous note
-	CMidiFile::CMidiEventArray	m_arrMidiEvent[COLORS];	// array of MIDI events for each channel
-
-	void	MakeScale(int nStartNote);
-	void	PrintScale();
-	bool	MidiOpen();
-	void	MidiInit();
-	void	MidiClose();
-	void	MidiStartDraw();
-	void	MidiContinueDraw(double fPos);
-	void	MidiOut(int nCmd, int nChan, int nP1, int nP2);
-	DWORD	GetFrameTick(ULONGLONG iFrame);
-	void	MidiFileInit();
+	CPalimpsestMusic	m_music;	// musical accompaniment
 
 // CRenderTarget overrides
 	virtual void	OnError(HRESULT hr, LPCSTR pszSrcFileName, int nLineNum, LPCSTR pszSrcFileDate);

@@ -17,9 +17,6 @@
 #include "PalimpsestDraw.h"
 #include <d3dcompiler.h>
 #include "Easing.h"
-#include "Midi.h"
-#include "Note.h"
-#include "D2DHelper.h"
 
 #define DTF(x) static_cast<float>(x)
 
@@ -30,11 +27,12 @@
 #define LOG_BENCHMARKS		0		// non-zero to write benchmarks in app's log file
 #define BENCHMARK_GROW_BY	7200	// number of samples by which benchmark array grows
 #define STATISTICS_FRAMES	120		// number of frames to accumulate statistics over
-#define LOG_CYCLE_TIMES		0		// non-zero to write cycle timing to log file
+#define EXPORT_MIDI_ONLY	0		// non-zero to export MIDI file only, skipping images
 
 CPalimpsestDraw::CPalimpsestDraw()
 	: m_stats(STATISTICS_FRAMES)
 {
+	static_assert(COLORS == CPalimpsestMusic::COLORS, "drawing and music share 16-color scheme");
 	ZeroMemory(&m_viewport, sizeof(m_viewport));
 	m_rlColor.Init(COLORS);
 	m_rlChanMask.Init(COLORS - 1);
@@ -53,14 +51,6 @@ CPalimpsestDraw::CPalimpsestDraw()
 	m_nFrames = 0;
 	m_fPrevTime = 0;
 	m_aFrameBenchmark.SetGrowBy(BENCHMARK_GROW_BY);
-
-	// musical accompaniment
-	ZeroMemory(m_arrColorNote, sizeof(m_arrColorNote));
-	ZeroMemory(m_arrChanNote, sizeof(m_arrChanNote));
-	ZeroMemory(m_arrChanVolume, sizeof(m_arrChanVolume));
-	m_nCurMidiChan = 0;
-	m_nChanCycles = 0;
-	m_nPrevNote = 0xff;
 }
 
 CPalimpsestDraw::~CPalimpsestDraw()
@@ -107,8 +97,8 @@ void CPalimpsestDraw::Destroy()
 #if LOG_BENCHMARKS
 	LogBenchmarks();
 #endif
-	if (m_midiOut.IsOpen())
-		MidiClose();
+	if (m_music.IsOpen())
+		m_music.Close();
 }
 
 void CPalimpsestDraw::Resize()
@@ -175,7 +165,7 @@ bool CPalimpsestDraw::OnThreadCreate()
 	}
 	m_fPrevTime = CBenchmark::Time();
 	if (m_args.m_nMidiOut >= 0)
-		MidiOpen();
+		m_music.Open();
 	return true;
 }
 
@@ -265,8 +255,8 @@ bool CPalimpsestDraw::OnDraw()
 		m_clrStart = m_params.arrPalette[m_params.iCurColor];	// start color is current color
 		m_clrTarget.Randomize();	// choose a random destination color
 		m_bContracting = (rand() & 1) != 0;	// randomly select expansion or contraction
-		if (m_midiOut.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
-			MidiStartDraw();
+		if (m_music.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
+			m_music.StartPrimitive(m_params.iCurColor);
 		if (m_args.m_bUseGradient) {	// if using gradient brush
 			const double fPower = 0.1;
 			double	fNormRand = rand() / double(RAND_MAX);
@@ -311,17 +301,20 @@ bool CPalimpsestDraw::OnDraw()
 	state.bContracting = m_bContracting;
 	m_params.arrPalette[m_params.iCurColor].Tween(
 		m_clrStart, m_clrTarget, fEasedPos);
-	m_pContext->UpdateSubresource(m_pParameters, 0, NULL, &m_params, 0, 0);
-	RasterizeCoverage(m_coverage, state);
-	UpdateWeights(m_aBank[m_iCommittedBank],
-		m_aBank[m_iShownBank], m_coverage);
-	DrawFrame(m_aBank[m_iShownBank], m_coverage);
+	if (!EXPORT_MIDI_ONLY || !m_bIsExport) {	// if not skipping images
+		// nearly all the overhead is from this block
+		m_pContext->UpdateSubresource(m_pParameters, 0, NULL, &m_params, 0, 0);
+		RasterizeCoverage(m_coverage, state);
+		UpdateWeights(m_aBank[m_iCommittedBank],
+			m_aBank[m_iShownBank], m_coverage);
+		DrawFrame(m_aBank[m_iShownBank], m_coverage);
+	}
 	if (m_iEllipseCurFrame >= m_nEllipseFrames) {	// if ellipse complete
 		m_iCommittedBank = m_iShownBank;	// commit current bank
 		m_iEllipseCurFrame = -1;	// trigger new ellipse on next frame
 	}
-	if (m_midiOut.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
-		MidiContinueDraw(fEasedPos);
+	if (m_music.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
+		m_music.ContinuePrimitive(fEasedPos);
 	m_nFrames++;
 #if DISPLAY_BENCHMARKS && defined(_DEBUG)
 	m_stats.Print(tElapsed);
@@ -695,177 +688,13 @@ void CPalimpsestDraw::LogBenchmarks()
 	}
 }
 
-// Musical accompaniment
-
-void CPalimpsestDraw::MakeScale(int nStartNote)
-{
-	// assign notes from Lydian mode of major scale
-	static const int arrScale[] = {0, 2, 4, 6, 7, 9, 11};
-	const int nScaleLen = _countof(arrScale);
-	m_arrColorNote[0] = static_cast<BYTE>(nStartNote - 12);	// drop lowest note an octave
-	for (int iTone = 1; iTone < COLORS; iTone++) {
-		int	nNote = nStartNote + iTone / nScaleLen * 12 + arrScale[iTone % nScaleLen];
-		ASSERT(nNote >= 0 && nNote < MIDI_NOTES);
-		m_arrColorNote[iTone] = static_cast<BYTE>(nNote);
-	}
-}
-
-void CPalimpsestDraw::PrintScale()
-{
-	for (int iTone = 0; iTone < COLORS; iTone++) {
-		CNote	note(m_arrColorNote[iTone]);
-		_tprintf(_T("%s "), note.MidiName());
-	}
-}
-
-bool CPalimpsestDraw::MidiOpen()
-{
-	if (MIDI_FAILED(m_midiOut.Open(m_args.m_nMidiOut, NULL, NULL, 0))) {
-		AfxMessageBox(_T("Can't open MIDI output device"));
-		return false;
-	}
-	MidiInit();
-	return true;
-}
-
-void CPalimpsestDraw::MidiFileInit()
-{
-	// forces creation of event blocks in Reason
-	ASSERT(m_bIsExport);
-	for (int iChan = 0; iChan < COLORS; iChan++) {
-		MidiOut(CONTROL, iChan, CC_VOLUME, 0);
-		MidiOut(CONTROL, iChan, CC_PAN, 0);
-		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 0);
-		MidiOut(CONTROL, iChan, CC_AMP_ENV_RELEASE, 0);
-		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 0);
-	}
-	MidiInit();	// then do regular init
-}
-
-void CPalimpsestDraw::MidiInit()
-{
-	for (int iChan = 0; iChan < COLORS; iChan++) {
-		// set amplitude envelope attack long enough to comfortably avoid a click
-		// at start of note, due to the sampler's having a non-zero sample start
-		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 50);
-		// set amplitude velocity amount big enough to allow reasonable dynamics
-		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 94);
-	}
-}
-
-void CPalimpsestDraw::MidiClose()
-{
-	// release active note
-	if (m_arrChanNote[m_nCurMidiChan]) {
-		MidiOut(NOTE_ON, m_nCurMidiChan, m_arrChanNote[m_nCurMidiChan], 0);
-		m_arrChanNote[m_nCurMidiChan] = 0;	// mark note released
-	}
-	m_midiOut.Close();
-}
-
-void CPalimpsestDraw::MidiStartDraw()
-{
-	// following assumes COLORS == MIDI_CHANNELS
-	if (!m_nCurMidiChan) {	// if at start of channel cycle
-		// make a new scale
-		int	nBottomNote = 36 + 4;
-		int	nStartNote = nBottomNote + m_nChanCycles * 5 % 24;
-		MakeScale(nStartNote);
-		if (LOG_CYCLE_TIMES) {
-			CString	sLine;
-			sLine.Format(_T("%d: cycle %d\n"), m_nFrames, m_nChanCycles);
-			theApp.WriteLogEntry(sLine);
-		}
-		m_nChanCycles++;	// bump channel cycle count
-	}
-	// release current channel's note
-	int	nActiveNote = m_arrChanNote[m_nCurMidiChan];
-	if (nActiveNote) {
-		MidiOut(NOTE_ON, m_nCurMidiChan, nActiveNote, 0);
-	}
-	// advance current channel
-	m_nCurMidiChan++;
-	if (m_nCurMidiChan >= COLORS)	// if reached end of channels
-		m_nCurMidiChan = 0;	// wrap around to first channel
-	// set current channel's volume to zero
-	MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, 0);
-	// set current channel's panning
-	// define logical position of each channel, with lowest pitches centered
-	static const BYTE arrPanPos[COLORS] = {8,7,9,6,10,5,11,4,12,3,13,2,14,1,15,0};
-	int	iPanPos = arrPanPos[m_params.iCurColor];
-	int	nPan = min(iPanPos * 8, 127);	// convert logical position to pan value
-	MidiOut(CONTROL, m_nCurMidiChan, CC_PAN, nPan);
-	// set current channel's amplitude envelope release time
-	int	nReleaseTime = m_params.iCurColor ? 90 : 110;	// give bass note a longer duration
-	MidiOut(CONTROL, m_nCurMidiChan, CC_AMP_ENV_RELEASE, nReleaseTime);
-	// start current channel's note
-	int	nNote = m_arrColorNote[m_params.iCurColor];
-	int	nVel = min(64 + (COLORS - 1 - m_params.iCurColor) * 4, 127);
-	MidiOut(NOTE_ON, m_nCurMidiChan, nNote, nVel);
-	m_arrChanNote[m_nCurMidiChan] = static_cast<BYTE>(nNote);	// update current channel's note state
-	m_nPrevNote = static_cast<BYTE>(nNote);
-}
-
-void CPalimpsestDraw::MidiContinueDraw(double fPos)
-{
-	// update current channel's volume
-	int	nVolume = Round(fPos * 127);
-	if (nVolume != m_arrChanVolume[m_nCurMidiChan]) {	// if volume actually changed
-		MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, nVolume);
-		m_arrChanVolume[m_nCurMidiChan] = static_cast<BYTE>(nVolume);	// update cached volume
-	}
-}
-
-DWORD CPalimpsestDraw::GetFrameTick(ULONGLONG iFrame)
-{
-	const double	fTicksPerSec = (double(MF_TEMPO) / 60) * MF_TIMEBASE;
-	double fFrameTimeSecs = (1.0 / m_fFrameRate) * iFrame;
-	return Round(fTicksPerSec * fFrameTimeSecs);
-}
-
-void CPalimpsestDraw::MidiOut(int nCmd, int nChan, int nP1, int nP2)
-{
-	DWORD	dwMsg = MakeMidiMsg(nCmd, nChan, nP1, nP2);
-	if (m_bIsExport) {	// if exporting, store event
-		DWORD	dwTime = GetFrameTick(m_nFrames);
-		CMidiFile::MIDI_EVENT	evt = {dwTime, dwMsg};
-		m_arrMidiEvent[nChan].Add(evt);
-	} else {	// output to MIDI device
-		m_midiOut.OutShortMsg(dwMsg);
-	}
-}
-
-void CPalimpsestDraw::WriteMidiFile(LPCTSTR pszPath)
-{
-	ASSERT(m_bIsExport);	// only valid in export mode
-	CMidiFile	fMidi(pszPath, CFile::modeCreate | CFile::modeWrite);
-	DWORD	dwDuration = GetFrameTick(m_nFrames);
-	fMidi.WriteHeader(COLORS, MF_TIMEBASE, MF_TEMPO, dwDuration, NULL, NULL, NULL);
-	CStdioFile	fText(_T("midi.txt"), CFile::modeCreate | CFile::modeWrite);
-	for (int iChan = 0; iChan < COLORS; iChan++) {
-		CMidiFile::CMidiEventArray& arrEvt = m_arrMidiEvent[iChan];
-		int	nEvts = arrEvt.GetSize();
-		DWORD	nPrevTime = 0;
-		for (int iEvt = 0; iEvt < nEvts; iEvt++) {
-			CMidiFile::MIDI_EVENT& evt = arrEvt[iEvt];
-			CString	s;
-			s.Format(_T("%d\t%x\n"), evt.DeltaT, evt.Msg);
-			fText.WriteString(s);
-			DWORD	nCurTime = evt.DeltaT;	// absolute time 
-			evt.DeltaT = nCurTime - nPrevTime;	// convert to delta time
-			nPrevTime = nCurTime;	// update previous time
-		}
-		fMidi.WriteTrack(arrEvt);
-		fText.WriteString(_T("\n"));
-	}
-}
-
 bool CPalimpsestDraw::CreateExport()
 {
 	ASSERT(m_pSwapChain == NULL);	// don't call Create when exporting
 	// override problematic command line parameters
 	m_args.m_bStartFullScreen = false;	// no full screen
 	m_args.m_nMidiOut = -1;	// no MIDI output device
+	m_music.ExportInit();
 	m_bIsExport = true;
 	if (!CreateOffscreen())
 		return false;
@@ -883,5 +712,13 @@ bool CPalimpsestDraw::CreateExport()
 bool CPalimpsestDraw::ExportFrame(LPCTSTR pszPath)
 {
 	OnDraw();
+	if (EXPORT_MIDI_ONLY)
+		return true;
 	return WriteFrame(pszPath);
 }
+
+void CPalimpsestDraw::WriteMidiFile(LPCTSTR pszPath)
+{
+	m_music.WriteFile(pszPath);
+}
+

@@ -33,6 +33,7 @@
     <ClCompile Include="Palimpsest.cpp" />
     <ClCompile Include="PalimpsestDlg.cpp" />
     <ClCompile Include="PalimpsestDraw.cpp" />
+    <ClCompile Include="PalimpsestMusic.cpp" />
     <ClCompile Include="ParamParser.cpp" />
     <ClCompile Include="CmdLineArgs.cpp" />
     <ClCompile Include="PathStr.cpp" />
@@ -76,6 +77,7 @@
     <ClInclude Include="Palimpsest.h" />
     <ClInclude Include="PalimpsestDlg.h" />
     <ClInclude Include="PalimpsestDraw.h" />
+    <ClInclude Include="PalimpsestMusic.h" />
     <ClInclude Include="ParamDef.h" />
     <ClInclude Include="ParamParser.h" />
     <ClInclude Include="CmdLineArgs.h" />
