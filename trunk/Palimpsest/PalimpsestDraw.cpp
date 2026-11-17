@@ -27,7 +27,7 @@
 #define LOG_BENCHMARKS		0		// non-zero to write benchmarks in app's log file
 #define BENCHMARK_GROW_BY	7200	// number of samples by which benchmark array grows
 #define STATISTICS_FRAMES	120		// number of frames to accumulate statistics over
-#define EXPORT_MIDI_ONLY	0		// non-zero to export MIDI file only, skipping images
+#define EXPORT_MIDI_ONLY	1		// non-zero to export MIDI file only, skipping images
 
 CPalimpsestDraw::CPalimpsestDraw()
 	: m_stats(STATISTICS_FRAMES)
@@ -255,12 +255,11 @@ bool CPalimpsestDraw::OnDraw()
 		m_clrStart = m_params.aPalette[m_params.iCurColor];	// start color is current color
 		m_clrTarget.Randomize();	// choose a random destination color
 		m_bContracting = (rand() & 1) != 0;	// randomly select expansion or contraction
-		if (m_music.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
-			m_music.StartPrimitive(m_params.iCurColor);
+		double	fGradientCoreFrac;
 		if (m_args.m_bUseGradient) {	// if using gradient brush
 			const double fPower = 0.1;
 			double	fNormRand = rand() / double(RAND_MAX);
-			double	fGradientCoreFrac = Exponential(fNormRand, fPower);
+			fGradientCoreFrac = Exponential(fNormRand, fPower);
 			// stops array is constant except for middle stop's position
 			static	D2D1_GRADIENT_STOP	aStops[] = {
 				{0, D2D1::ColorF(1, 1, 1, 1)},
@@ -275,7 +274,11 @@ bool CPalimpsestDraw::OnDraw()
 			m_pGradientBrush.Release();
 			CHECK(m_pD2Context->CreateRadialGradientBrush(
 				propsGrad, pStops, &m_pGradientBrush));
+		} else {
+			fGradientCoreFrac = 1;
 		}
+		if (m_music.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
+			m_music.StartPrimitive(m_params.iCurColor, m_bContracting, fGradientCoreFrac);
 	}
 	bool	bAdvancing = true;
 	if (m_bIsPaused) {	// if paused

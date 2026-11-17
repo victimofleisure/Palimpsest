@@ -9,17 +9,18 @@
 		rev		date	comments
         00      13nov26	initial version
         01      16nov26	move to helper class
+		02		17nov26	enhance mapping
 
 */
 
 #include "stdafx.h"
-#include "Palimpsest.h"
+#include "Resource.h"
 #include "PalimpsestMusic.h"
 #include "Midi.h"
 #include "Note.h"
 
-#define LOG_CYCLE_TIMES		0		// non-zero to write cycle timing to log file
-#define LOG_NOTES			0		// 0 = disable, 1 = log to console, 2 = log to file
+#define MUSIC_LOGGING	0	// 0 = none, 1 = log to console, 2 = log to file
+#define LOG_NOTES		0	// non-zero to log notes, else log key changes only
 
 CPalimpsestMusic::CPalimpsestMusic()
 {
@@ -118,14 +119,15 @@ void CPalimpsestMusic::ExportInit(double fFrameRate)
 	m_fFrameRate = fFrameRate;
 	// following forces creation of clips in Reason
 	for (int iChan = 0; iChan < COLORS; iChan++) {
-		MidiOut(CONTROL, iChan, CC_VOLUME, 0);
+		MidiOut(WHEEL, iChan, 0, 0);
 		MidiOut(CONTROL, iChan, CC_PAN, 0);
 		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 0);
 		MidiOut(CONTROL, iChan, CC_AMP_ENV_RELEASE, 0);
 		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 0);
+		MidiOut(CONTROL, iChan, CC_BRASS_AMP_LEVEL, 0);
+		MidiOut(CONTROL, iChan, CC_RECEIVE_NOTES, 0);
 	}
 	Init();	// then do regular init
-//	PrintScales();
 }
 
 void CPalimpsestMusic::Init()
@@ -136,12 +138,15 @@ void CPalimpsestMusic::Init()
 		MidiOut(CONTROL, iChan, CC_AMP_ENV_ATTACK, 50);
 		// set amplitude velocity amount big enough to allow reasonable dynamics
 		MidiOut(CONTROL, iChan, CC_AMP_VEL_AMOUNT, 94);
+		// set brass master level for suitable balance with strings
+		MidiOut(CONTROL, iChan, CC_BRASS_AMP_LEVEL, 80);
 	}
-#if LOG_NOTES == 1
+#if MUSIC_LOGGING == 1	// if logging to console
 	m_fLog = stdout;
-#elif LOG_NOTES == 2
-	_tfopen_s(&m_fLog, _T("palimpsest_notes.log"), _T("wt"));
+#elif MUSIC_LOGGING == 2	// else if logging to file
+	_tfopen_s(&m_fLog, _T("palimpsest_music.log"), _T("wt"));
 #endif
+//	PrintScales();
 }
 
 void CPalimpsestMusic::Close()
@@ -154,20 +159,15 @@ void CPalimpsestMusic::Close()
 	m_midiOut.Close();
 }
 
-void CPalimpsestMusic::StartPrimitive(int iCurColor)
+void CPalimpsestMusic::StartPrimitive(int iCurColor, bool bIsContracting, double fGradientCoreFrac)
 {
 	ASSERT(iCurColor >= 0 && iCurColor < COLORS);
 	if (!m_nCurMidiChan) {	// if at start of channel cycle
 		// make a new scale
 		m_nStartNote = MakeScale(m_nChanCycles);
-#if LOG_NOTES
-		_ftprintf(m_fLog, _T("key %-2s\n"), CNote(m_nStartNote).Name(F));
+#if MUSIC_LOGGING
+		_ftprintf(m_fLog, _T("%7d %-2s\n"), m_nFrames, CNote(m_nStartNote).Name(F));
 #endif
-		if (LOG_CYCLE_TIMES) {
-			CString	sLine;
-			sLine.Format(_T("%d: cycle %d\n"), m_nFrames, m_nChanCycles);
-			theApp.WriteLogEntry(sLine);
-		}
 		m_nChanCycles++;	// bump channel cycle count
 	}
 	// release current channel's note
@@ -180,7 +180,10 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor)
 	if (m_nCurMidiChan >= COLORS)	// if reached end of channels
 		m_nCurMidiChan = 0;	// wrap around to first channel
 	// set current channel's volume to zero
-	MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, 0);
+	MidiOut(WHEEL, m_nCurMidiChan, 0, 0);
+	// select instrument based on expansion versus contraction
+	int	nInstSel = bIsContracting ? MIDI_NOTE_MAX : 0;
+	MidiOut(CONTROL, m_nCurMidiChan, CC_RECEIVE_NOTES, nInstSel);
 	// set current channel's panning
 	// table contains each channel's position, evenly spaced
 	// with lowest pitches centered and full range utilized
@@ -198,15 +201,11 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor)
 	MidiOut(CONTROL, m_nCurMidiChan, CC_AMP_ENV_RELEASE, nRelease);
 	// start current channel's note
 	int	nNote = m_aColorNote[iCurColor];
-	// give higher notes less velocity
-	const int	nMinVelo = 64;
-	const int	nMaxVelo = MIDI_NOTE_MAX;
-	const int	nVeloRange = nMaxVelo - nMinVelo;
-	int nVel = nMaxVelo - Round(double(iTone) * nVeloRange / (COLORS - 1));
-	MidiOut(NOTE_ON, m_nCurMidiChan, nNote, nVel);
-#if LOG_NOTES
+	int nVelo = Round(fGradientCoreFrac * (MIDI_NOTE_MAX - 1)) + 1;
+	MidiOut(NOTE_ON, m_nCurMidiChan, nNote, nVelo);
+#if MUSIC_LOGGING && LOG_NOTES
 	_ftprintf(m_fLog, _T("%7d %2d %2d %-3s %3d %3d %3d\n"), m_nFrames, m_nCurMidiChan, 
-		iCurColor, CNote(nNote).MidiName(m_nStartNote), nVel, nPan - 64, nRelease);
+		iCurColor, CNote(nNote).MidiName(m_nStartNote), nVelo, nPan - 64, nRelease);
 #endif
 	m_aChanNote[m_nCurMidiChan] = static_cast<BYTE>(nNote);	// update current channel's note state
 	m_nPrevNote = static_cast<BYTE>(nNote);
@@ -215,9 +214,9 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor)
 void CPalimpsestMusic::ContinuePrimitive(double fPos)
 {
 	// update current channel's volume
-	int	nVolume = Round(fPos * MIDI_NOTE_MAX);
+	int	nVolume = Round(fPos * 0x2EF6);
 	if (nVolume != m_aChanVolume[m_nCurMidiChan]) {	// if volume actually changed
-		MidiOut(CONTROL, m_nCurMidiChan, CC_VOLUME, nVolume);
+		MidiOut(WHEEL, m_nCurMidiChan, nVolume & 0x7f, nVolume >> 7);
 		m_aChanVolume[m_nCurMidiChan] = static_cast<BYTE>(nVolume);	// update cached volume
 	}
 	m_nFrames++;

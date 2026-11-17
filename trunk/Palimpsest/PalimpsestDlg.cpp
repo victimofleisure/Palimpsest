@@ -111,7 +111,9 @@ bool CPalimpsestDlg::Export()
 		if (!theApp.m_rt.ExportFrame(sPath))
 			return false;
 	}
-	theApp.m_rt.WriteMidiFile(_T("palimpsest.mid"));
+	CPathStr	sPath(theApp.m_args.m_sRecFolderPath);
+	sPath.Append(_T("palimpsest.mid"));
+	theApp.m_rt.WriteMidiFile(sPath);
 	return true;
 }
 
@@ -132,7 +134,7 @@ BOOL CPalimpsestDlg::OnInitDialog()
 
 	CustomizeSystemMenu();
 
-	PostMessage(UWM_DELAYED_CREATE);
+	PostMessage(UWM_DELAYED_CREATE);	// runs after message queue settles down
 
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -191,9 +193,13 @@ END_MESSAGE_MAP()
 
 void CPalimpsestDlg::OnClose()
 {
-	// command render thread to exit; it notifies when it has exited
-	m_bIsDrawReady = false;	// don't queue more commands after exit
-	theApp.m_rt.SignalExit();	// signal render thread to exit
+	if (m_bIsDrawReady) {	// if render thread was launched
+		// command render thread to exit; it notifies when it has exited
+		m_bIsDrawReady = false;	// don't queue more commands after exit
+		theApp.m_rt.SignalExit();	// signal render thread to exit
+	} else {	// no render thread
+		EndDialog(IDCANCEL);
+	}
 }
 
 void CPalimpsestDlg::OnPaint()

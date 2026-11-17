@@ -9,6 +9,7 @@
 		rev		date	comments
         00      13nov26	initial version
         01      16nov26	move to helper class
+		02		17nov26	enhance mapping
 
 */
 
@@ -36,7 +37,7 @@ public:
 	bool	Open(UINT nMidiOutDev);
 	void	Init();
 	void	Close();
-	void	StartPrimitive(int iCurColor);
+	void	StartPrimitive(int iCurColor, bool bIsContracting, double fGradientCoreFrac);
 	void	ContinuePrimitive(double fPos);
 	void	MidiOut(int nCmd, int nChan, int nP1, int nP2);
 	void	ExportInit(double fFrameRate);
@@ -45,11 +46,16 @@ public:
 protected:
 // Constants
 	enum {	// continuous controller numbers
-		CC_VOLUME			= 71,	// Combinator Control 1 -> Line Mixer Channel 1 Volume
-		CC_PAN				= 72,	// Combinator Control 2 -> Line Mixer Channel 1 pan
-		CC_AMP_ENV_ATTACK	= 73,	// Combinator Control 3 -> NN-19 Amplitude Envelope Attack
-		CC_AMP_ENV_RELEASE	= 74,	// Combinator Control 4 -> NN-19 Amplitude Envelope Release
-		CC_AMP_VEL_AMOUNT	= 2,	// Combinator Breath -> NN-19 Amplitude Velocity Amount
+		// Pitch Bend is mapped to Mixer Channel Volume via Remote Override Mapping.
+		// Pitch Bend gives 14-bit precision, verified by analysis of recorded audio.
+		// Note that 0.00 dB is approximately 3830 signed (12022 unsigned or 0x2EF6).
+		// Receive Notes is cross-mapped to choose between a pair of NN-19 samplers.
+		CC_PAN				= 20,	// Mixer Channel Strip Pan via Remote Override Mapping
+		CC_AMP_ENV_ATTACK	= 71,	// Combinator Control 1 -> NN-19 Amplitude Envelope Attack
+		CC_AMP_ENV_RELEASE	= 72,	// Combinator Control 2 -> NN-19 Amplitude Envelope Release
+		CC_AMP_VEL_AMOUNT	= 73,	// Combinator Control 3 -> NN-19 Amplitude Velocity Amount
+		CC_BRASS_AMP_LEVEL	= 74,	// Combinator Control 4 -> Brass NN-19 Master Level
+		CC_RECEIVE_NOTES	= 75,	// Combinator Button 1 -> Combinator Receive Notes
 	};
 	enum {
 		MF_TIMEBASE = 120,		// MIDI file timebase in ticks per quarter note
