@@ -165,7 +165,7 @@ bool CPalimpsestDraw::OnThreadCreate()
 	}
 	m_fPrevTime = CBenchmark::Time();
 	if (m_args.m_nMidiOut >= 0)
-		m_music.Open();
+		m_music.Open(m_args.m_nMidiOut);
 	return true;
 }
 
@@ -240,19 +240,19 @@ bool CPalimpsestDraw::OnDraw()
 			Round(nSize * fMinFrac) +
 				CRandList::Rand(Round(nSize * (fMaxFrac - fMinFrac))));
 		// get color channel from randomized list
-		m_params.iCurColor = m_rlColor.GetNext(m_params.iCurColor);
+		m_params.iCurColor = m_rlColor.GetNextNoRepeat();
 		if (m_bFreshStart) {	// if first ellipse after a recreate
 			m_params.nChanMask = COLORS - 1;	// ensure something gets drawn
 			m_bFreshStart = false;	// reset flag
 		} else {	// usual case; get channel mask from randomized list
-			m_params.nChanMask = m_rlChanMask.GetNext(m_params.nChanMask - 1) + 1;
+			m_params.nChanMask = m_rlChanMask.GetNextNoRepeat() + 1;
 		}
 		int nMaxRadius = max(m_szEllipse.cx, m_szEllipse.cy);
 		if (m_fRadiusStep <= 0)	// if invalid radius step
 			return true;	// avoid divide by zero
 		m_iEllipseCurFrame = 0;
 		m_nEllipseFrames = max(1, Round(nMaxRadius / m_fRadiusStep));
-		m_clrStart = m_params.arrPalette[m_params.iCurColor];	// start color is current color
+		m_clrStart = m_params.aPalette[m_params.iCurColor];	// start color is current color
 		m_clrTarget.Randomize();	// choose a random destination color
 		m_bContracting = (rand() & 1) != 0;	// randomly select expansion or contraction
 		if (m_music.IsOpen() || m_bIsExport)	// if MIDI output device open or exporting
@@ -299,7 +299,7 @@ bool CPalimpsestDraw::OnDraw()
 	state.fRadiusX = float(m_szEllipse.cx * fBidirPos);
 	state.fRadiusY = float(m_szEllipse.cy * fBidirPos);
 	state.bContracting = m_bContracting;
-	m_params.arrPalette[m_params.iCurColor].Tween(
+	m_params.aPalette[m_params.iCurColor].Tween(
 		m_clrStart, m_clrTarget, fEasedPos);
 	if (!EXPORT_MIDI_ONLY || !m_bIsExport) {	// if not skipping images
 		// nearly all the overhead is from this block
@@ -371,9 +371,9 @@ CPalimpsestDraw::CStateBank::~CStateBank()
 void CPalimpsestDraw::CStateBank::Destroy()
 {
 	for (int iTexture = 0; iTexture < WEIGHT_TEXTURES; iTexture++) {	// for each weight texture
-		m_arrWriteView[iTexture].Release();
-		m_arrShaderView[iTexture].Release();
-		m_arrTexture[iTexture].Release();
+		m_aWriteView[iTexture].Release();
+		m_aShaderView[iTexture].Release();
+		m_aTexture[iTexture].Release();
 	}
 }
 
@@ -413,11 +413,11 @@ bool CPalimpsestDraw::CreateStateBank(CStateBank& bank, CSize szFrame)
 	desc.Usage = D3D11_USAGE_DEFAULT;
 	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
 	for (int iTexture = 0; iTexture < WEIGHT_TEXTURES; iTexture++) {	// for each weight texture
-		CHECK(m_pDevice->CreateTexture2D(&desc, NULL, &bank.m_arrTexture[iTexture]));
-		CHECK(m_pDevice->CreateShaderResourceView(bank.m_arrTexture[iTexture], NULL,
-			&bank.m_arrShaderView[iTexture]));
-		CHECK(m_pDevice->CreateUnorderedAccessView(bank.m_arrTexture[iTexture], NULL,
-			&bank.m_arrWriteView[iTexture]));
+		CHECK(m_pDevice->CreateTexture2D(&desc, NULL, &bank.m_aTexture[iTexture]));
+		CHECK(m_pDevice->CreateShaderResourceView(bank.m_aTexture[iTexture], NULL,
+			&bank.m_aShaderView[iTexture]));
+		CHECK(m_pDevice->CreateUnorderedAccessView(bank.m_aTexture[iTexture], NULL,
+			&bank.m_aWriteView[iTexture]));
 	}
 	return true;
 }
@@ -449,18 +449,18 @@ bool CPalimpsestDraw::CreateCoverageBuffer(CCoverageBuffer& buffer, CSize szFram
 void CPalimpsestDraw::ClearBank(CStateBank& bank)
 {
 	for (int iTexture = 0; iTexture < WEIGHT_TEXTURES; iTexture++) {	// for each weight texture
-		float arrValue[4] = {iTexture == 0 ? 1.f : 0.f, 0, 0, 0};	// four RGBA channels per texture
-		m_pContext->ClearUnorderedAccessViewFloat(bank.m_arrWriteView[iTexture], arrValue);
+		float aValue[4] = {iTexture == 0 ? 1.f : 0.f, 0, 0, 0};	// four RGBA channels per texture
+		m_pContext->ClearUnorderedAccessViewFloat(bank.m_aWriteView[iTexture], aValue);
 	}
 }
 
 void CPalimpsestDraw::UnbindD3DResources()
 {
-	ID3D11ShaderResourceView *arrShaderView[SHADER_RESOURCES] = {};
-	ID3D11UnorderedAccessView *arrWriteView[WEIGHT_TEXTURES] = {};
-	m_pContext->CSSetShaderResources(0, SHADER_RESOURCES, arrShaderView);
-	m_pContext->PSSetShaderResources(0, SHADER_RESOURCES, arrShaderView);
-	m_pContext->CSSetUnorderedAccessViews(0, WEIGHT_TEXTURES, arrWriteView, NULL);
+	ID3D11ShaderResourceView *aShaderView[SHADER_RESOURCES] = {};
+	ID3D11UnorderedAccessView *aWriteView[WEIGHT_TEXTURES] = {};
+	m_pContext->CSSetShaderResources(0, SHADER_RESOURCES, aShaderView);
+	m_pContext->PSSetShaderResources(0, SHADER_RESOURCES, aShaderView);
+	m_pContext->CSSetUnorderedAccessViews(0, WEIGHT_TEXTURES, aWriteView, NULL);
 	m_pContext->OMSetRenderTargets(0, NULL, NULL);
 }
 
@@ -538,7 +538,7 @@ inline CPalimpsestDraw::CShaderParams::CShaderParams()
 void CPalimpsestDraw::CShaderParams::RandomizePalette()
 {
 	for (int iColor = 0; iColor < COLORS; iColor++) {	// for each color
-		arrPalette[iColor].Randomize();
+		aPalette[iColor].Randomize();
 	}
 }
 
@@ -588,8 +588,8 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 				D2D1::Ellipse(D2D1::Point2F(state.fCenterX, state.fCenterY), state.fRadiusX, state.fRadiusY), &pInner);
 		}
 		if (SUCCEEDED(hResult)) {
-			ID2D1Geometry *arrShape[] = {pOuter, pInner};
-			hResult = m_pD2Factory->CreateGeometryGroup(D2D1_FILL_MODE_ALTERNATE, arrShape, 2, &pRing);
+			ID2D1Geometry *aShape[] = {pOuter, pInner};
+			hResult = m_pD2Factory->CreateGeometryGroup(D2D1_FILL_MODE_ALTERNATE, aShape, 2, &pRing);
 		}
 		if (FAILED(hResult))
 			CHECK(hResult);
@@ -627,21 +627,21 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 
 void CPalimpsestDraw::UpdateWeights(CStateBank& oldBank, CStateBank& newBank, CCoverageBuffer& mask)
 {
-	ASSERT(oldBank.m_arrTexture[0] != newBank.m_arrTexture[0]); // Source and destination banks must differ
+	ASSERT(oldBank.m_aTexture[0] != newBank.m_aTexture[0]); // Source and destination banks must differ
 	ASSERT(oldBank.m_szFrame.cx == newBank.m_szFrame.cx && oldBank.m_szFrame.cy == newBank.m_szFrame.cy
 		&& oldBank.m_szFrame.cx == mask.m_szFrame.cx && oldBank.m_szFrame.cy == mask.m_szFrame.cy); // Mismatched state dimensions
 	UnbindD3DResources();
-	ID3D11ShaderResourceView *arrShaderView[] = {
-		oldBank.m_arrShaderView[0], oldBank.m_arrShaderView[1],
-		oldBank.m_arrShaderView[2], oldBank.m_arrShaderView[3], mask.m_pShaderView};
-	ID3D11UnorderedAccessView *arrWriteView[] = {
-		newBank.m_arrWriteView[0], newBank.m_arrWriteView[1],
-		newBank.m_arrWriteView[2], newBank.m_arrWriteView[3]};
+	ID3D11ShaderResourceView *aShaderView[] = {
+		oldBank.m_aShaderView[0], oldBank.m_aShaderView[1],
+		oldBank.m_aShaderView[2], oldBank.m_aShaderView[3], mask.m_pShaderView};
+	ID3D11UnorderedAccessView *aWriteView[] = {
+		newBank.m_aWriteView[0], newBank.m_aWriteView[1],
+		newBank.m_aWriteView[2], newBank.m_aWriteView[3]};
 	m_pContext->CSSetShader(m_pUpdateShader, NULL, 0);
 	ID3D11Buffer *pBuffer = m_pParameters;
 	m_pContext->CSSetConstantBuffers(0, 1, &pBuffer);
-	m_pContext->CSSetShaderResources(0, 5, arrShaderView);
-	m_pContext->CSSetUnorderedAccessViews(0, WEIGHT_TEXTURES, arrWriteView, NULL);
+	m_pContext->CSSetShaderResources(0, 5, aShaderView);
+	m_pContext->CSSetUnorderedAccessViews(0, WEIGHT_TEXTURES, aWriteView, NULL);
 	m_pContext->Dispatch((oldBank.m_szFrame.cx + 7) / 8, (oldBank.m_szFrame.cy + 7) / 8, 1);
 	UnbindD3DResources();
 }
@@ -664,10 +664,10 @@ void CPalimpsestDraw::DrawFrame(CStateBank& bank, CCoverageBuffer& mask)
 	m_pContext->PSSetShader(m_pPixelShader, NULL, 0);
 	ID3D11Buffer *pBuffer = m_pParameters;
 	m_pContext->PSSetConstantBuffers(0, 1, &pBuffer);
-	ID3D11ShaderResourceView *arrShaderView[] = {
-		bank.m_arrShaderView[0], bank.m_arrShaderView[1],
-		bank.m_arrShaderView[2], bank.m_arrShaderView[3], mask.m_pShaderView};
-	m_pContext->PSSetShaderResources(0, 5, arrShaderView);
+	ID3D11ShaderResourceView *aShaderView[] = {
+		bank.m_aShaderView[0], bank.m_aShaderView[1],
+		bank.m_aShaderView[2], bank.m_aShaderView[3], mask.m_pShaderView};
+	m_pContext->PSSetShaderResources(0, 5, aShaderView);
 	m_pContext->Draw(3, 0);
 	UnbindD3DResources();
 }
@@ -694,7 +694,7 @@ bool CPalimpsestDraw::CreateExport()
 	// override problematic command line parameters
 	m_args.m_bStartFullScreen = false;	// no full screen
 	m_args.m_nMidiOut = -1;	// no MIDI output device
-	m_music.ExportInit();
+	m_music.ExportInit(theApp.m_args.m_fRecFrameRate);
 	m_bIsExport = true;
 	if (!CreateOffscreen())
 		return false;

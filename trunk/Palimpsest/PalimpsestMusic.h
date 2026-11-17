@@ -14,7 +14,6 @@
 
 #pragma once
 
-#include "Palimpsest.h"
 #include "MidiWrap.h"
 #include "MidiFile.h"
 #include "Midi.h"
@@ -34,13 +33,13 @@ public:
 	bool	IsOpen() const;
 
 // Operations
-	bool	Open();
+	bool	Open(UINT nMidiOutDev);
 	void	Init();
 	void	Close();
 	void	StartPrimitive(int iCurColor);
 	void	ContinuePrimitive(double fPos);
 	void	MidiOut(int nCmd, int nChan, int nP1, int nP2);
-	void	ExportInit();
+	void	ExportInit(double fFrameRate);
 	void	WriteFile(LPCTSTR pszPath);
 
 protected:
@@ -59,21 +58,25 @@ protected:
 
 // Member data
 	CMidiOut	m_midiOut;		// MIDI output device
-	CMidiFile::CMidiEventArray	m_arrMidiEvent[MIDI_CHANNELS];	// array of MIDI events for each channel
-	BYTE	m_arrColorNote[COLORS];	// each color's note
-	BYTE	m_arrChanNote[COLORS];	// each MIDI channel's note
-	BYTE	m_arrChanVolume[COLORS];	// each MIDI channel's volume
+	CMidiFile::CMidiEventArray	m_aMidiEvent[MIDI_CHANNELS];	// array of MIDI events for each channel
+	BYTE	m_aColorNote[COLORS];	// each color's note
+	BYTE	m_aColorTone[COLORS];	// each color's unrotated tone index
+	BYTE	m_aChanNote[COLORS];	// each MIDI channel's note
+	BYTE	m_aChanVolume[COLORS];	// each MIDI channel's volume
 	int		m_nCurMidiChan;		// current MIDI channel
 	int		m_nChanCycles;		// number of cycles through all channels
+	int		m_nStartNote;		// current start note
 	BYTE	m_nPrevNote;		// previous note
 	bool	m_bIsExport;		// true if exporting MIDI file
 	double	m_fFrameRate;		// frame rate when exporting
 	ULONGLONG	m_nFrames;		// number of frames rendered
+	FILE*	m_fLog;				// log file for debugging
 
 // Helpers
-	void	MakeScale(int nStartNote);
-	void	PrintScale();
+	int		MakeScale(int iCycle);
+	CString	FormatScale(int nKey);
 	DWORD	GetFrameTick(ULONGLONG iFrame);
+	void	PrintScales();
 };
 
 inline bool CPalimpsestMusic::IsOpen() const

@@ -14,7 +14,7 @@
 
 #include "stdafx.h"
 #include "D3DDevCtx.h"
-#include "D2DHelper.h"
+#include "D2DHelper.h"	// for CAutoUnmapResource
 
 #define CHECK(x) { HRESULT hr = x; if (FAILED(hr)) { OnError(hr, __FILE__, __LINE__, __DATE__); return false; }}
 #define CHECK_VOID(x) { HRESULT hr = x; if (FAILED(hr)) OnError(hr, __FILE__, __LINE__, __DATE__); }

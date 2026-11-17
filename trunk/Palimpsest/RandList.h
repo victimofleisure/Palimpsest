@@ -11,39 +11,39 @@
         01      21nov11	add GetAvail
         02      01jul12	rename Rand argument
         03      06jan13	add cast to GetSize for x64
-		04		26oct25	overload get next to avoid duplicate values
+		04		03mar25	modernize style
+		05		26oct25	overload get next to avoid duplicate values
+		06		16nov26	fix no-repeat shuffle to preserve all values
 
 		random sequence without duplicates
  
 */
 
-#ifndef CRANDLIST_DEFINED
-#define CRANDLIST_DEFINED
+#pragma once
 
 class CRandList : public WObject {
 public:
 	CRandList();
-	CRandList(int Size);
-	static	int		Rand(int Vals);
-	void	Init(int Size);
+	CRandList(int nSize);
+	static	int		Rand(int nVals);
+	void	Init(int nSize);
 	int		GetNext();
-	int		GetNext(int nCurVal);
+	int		GetNextNoRepeat();
 	int		GetSize() const;
 	int		GetAvail() const;
 
-private:
+protected:
 	CDWordArray	m_List;	// array of randomly generated elements
-	int		m_Avail;	// number of elements that haven't been used
+	int		m_nAvail;	// number of elements that haven't been used
+	int		m_nCurVal;	// current value for GetNextNoRepeat
 };
 
 inline int CRandList::GetSize() const
 {
-	return(static_cast<int>(m_List.GetSize()));	// cast to 32-bit
+	return static_cast<int>(m_List.GetSize());	// cast to 32-bit
 }
 
 inline int CRandList::GetAvail() const
 {
-	return(m_Avail);
+	return m_nAvail;
 }
-
-#endif

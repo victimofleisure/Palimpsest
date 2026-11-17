@@ -64,9 +64,9 @@ protected:
 		~CStateBank();
 
 	// Implementation
-		CComPtr<ID3D11Texture2D>			m_arrTexture[WEIGHT_TEXTURES];
-		CComPtr<ID3D11ShaderResourceView>	m_arrShaderView[WEIGHT_TEXTURES];
-		CComPtr<ID3D11UnorderedAccessView>	m_arrWriteView[WEIGHT_TEXTURES];
+		CComPtr<ID3D11Texture2D>			m_aTexture[WEIGHT_TEXTURES];
+		CComPtr<ID3D11ShaderResourceView>	m_aShaderView[WEIGHT_TEXTURES];
+		CComPtr<ID3D11UnorderedAccessView>	m_aWriteView[WEIGHT_TEXTURES];
 		CSize	m_szFrame;
 
 	// Operations
@@ -119,7 +119,7 @@ protected:
 	class DECLSPEC_ALIGN(16) CShaderParams {
 	public:
 	// Public data
-		CPaletteColor arrPalette[COLORS];
+		CPaletteColor aPalette[COLORS];
 		UINT nWidth;
 		UINT nHeight;
 		UINT nChanMask;
