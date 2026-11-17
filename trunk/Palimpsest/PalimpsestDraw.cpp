@@ -225,6 +225,7 @@ bool CPalimpsestDraw::OnDraw()
 	double	tElapsed = tNow - m_fPrevTime;
 	m_fPrevTime = tNow;
 #endif
+	// preserve the committed state until the current frame has been fully composited
 	m_iShownBank = !m_iCommittedBank;
 	int nSize = min(m_params.nWidth, m_params.nHeight);
 	if (nSize <= 0)
@@ -245,6 +246,7 @@ bool CPalimpsestDraw::OnDraw()
 			m_params.nChanMask = COLORS - 1;	// ensure something gets drawn
 			m_bFreshStart = false;	// reset flag
 		} else {	// usual case; get channel mask from randomized list
+			// skip zero: an empty plane mask would leave the image unchanged
 			m_params.nChanMask = m_rlChanMask.GetNextNoRepeat() + 1;
 		}
 		int nMaxRadius = max(m_szEllipse.cx, m_szEllipse.cy);
@@ -258,6 +260,7 @@ bool CPalimpsestDraw::OnDraw()
 		double	fGradientCoreFrac;
 		if (m_args.m_bUseGradient) {	// if using gradient brush
 			const double fPower = 0.1;
+			// bias the core radius toward smaller values, yielding more diffuse edges
 			double	fNormRand = rand() / double(RAND_MAX);
 			fGradientCoreFrac = Exponential(fNormRand, fPower);
 			// stops array is constant except for middle stop's position
@@ -293,6 +296,7 @@ bool CPalimpsestDraw::OnDraw()
 	}
 	double fPos = double(m_iEllipseCurFrame) / m_nEllipseFrames;
 	double fEasedPos = EaseOut(fPos, 0.3);
+	// contraction erases inward while palette tweening still progresses forward
 	double fBidirPos = m_bContracting ? 1.0 - fEasedPos : fEasedPos;
 	CEllipseState	state;
 	state.fCenterX = float(m_ptCenter.x);
@@ -313,6 +317,7 @@ bool CPalimpsestDraw::OnDraw()
 		DrawFrame(m_aBank[m_iShownBank], m_coverage);
 	}
 	if (m_iEllipseCurFrame >= m_nEllipseFrames) {	// if ellipse complete
+		// an ellipse must complete before its state becomes the starting point for the next
 		m_iCommittedBank = m_iShownBank;	// commit current bank
 		m_iEllipseCurFrame = -1;	// trigger new ellipse on next frame
 	}
@@ -451,6 +456,7 @@ bool CPalimpsestDraw::CreateCoverageBuffer(CCoverageBuffer& buffer, CSize szFram
 
 void CPalimpsestDraw::ClearBank(CStateBank& bank)
 {
+	// start with full weight on palette index zero at every pixel
 	for (int iTexture = 0; iTexture < WEIGHT_TEXTURES; iTexture++) {	// for each weight texture
 		float aValue[4] = {iTexture == 0 ? 1.f : 0.f, 0, 0, 0};	// four RGBA channels per texture
 		m_pContext->ClearUnorderedAccessViewFloat(bank.m_aWriteView[iTexture], aValue);
@@ -459,6 +465,7 @@ void CPalimpsestDraw::ClearBank(CStateBank& bank)
 
 void CPalimpsestDraw::UnbindD3DResources()
 {
+	// the same textures alternate between shader inputs and outputs
 	ID3D11ShaderResourceView *aShaderView[SHADER_RESOURCES] = {};
 	ID3D11UnorderedAccessView *aWriteView[WEIGHT_TEXTURES] = {};
 	m_pContext->CSSetShaderResources(0, SHADER_RESOURCES, aShaderView);
@@ -599,6 +606,7 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 	}
 	ID2D1Brush*	pBrush;	// pointer to solid or gradient brush
 	if (m_args.m_bUseGradient) {	// if using gradient brush
+		// keep the gradient fixed at full size during contraction, rather than shrinking it with the hole
 		float rx = state.bContracting ? state.fOuterRadiusX : state.fRadiusX;
 		float ry = state.bContracting ? state.fOuterRadiusY : state.fRadiusY;
 		m_pGradientBrush->SetCenter(D2D1::Point2F(state.fCenterX, state.fCenterY));
@@ -610,6 +618,7 @@ bool CPalimpsestDraw::RasterizeCoverage(CCoverageBuffer& buffer, const CEllipseS
 	}
 	m_pD2Context->BeginDraw();
 	m_pD2Context->Clear(D2D1::ColorF(0, 0, 0, 0));
+	// the shrinking hole reveals old pixels; only the outer ring overwrites them
 	if (state.bContracting) {
 		if (state.fRadiusX <= 0 || state.fRadiusY <= 0) {
 			m_pD2Context->FillEllipse(D2D1::Ellipse(D2D1::Point2F(state.fCenterX, state.fCenterY),
@@ -724,4 +733,3 @@ void CPalimpsestDraw::WriteMidiFile(LPCTSTR pszPath)
 {
 	m_music.WriteFile(pszPath);
 }
-

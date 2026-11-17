@@ -38,6 +38,7 @@ void Update(uint3 vThread : SV_DispatchThreadID)
 		Next3[ptPixel] = vState3;
 		return;
 	}
+	// each pixel holds a distribution over palette indices, not a single accumulated color
 	float arrOldWeight[16] = {
 		vState0.x, vState0.y, vState0.z, vState0.w,
 		vState1.x, vState1.y, vState1.z, vState1.w,
@@ -49,6 +50,7 @@ void Update(uint3 vThread : SV_DispatchThreadID)
 	// Retain the uncovered part and transfer the covered part through the bit
 	// overwrite. Several old indices can contribute to one new palette index.
 	[unroll] for (uint iOldClr = 0; iOldClr < 16; ++iOldClr) {
+		// change only selected index bits, preserving the others from the old color
 		uint iNewClr = (iOldClr & (~PlaneMask & 15u)) | (NewColor & PlaneMask);
 		arrNewWeight[iNewClr] += fCoverage * arrOldWeight[iOldClr];
 	}

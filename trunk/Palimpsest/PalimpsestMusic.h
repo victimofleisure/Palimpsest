@@ -68,7 +68,7 @@ protected:
 	BYTE	m_aColorNote[COLORS];	// each color's note
 	BYTE	m_aColorTone[COLORS];	// each color's unrotated tone index
 	BYTE	m_aChanNote[COLORS];	// each MIDI channel's note
-	BYTE	m_aChanVolume[COLORS];	// each MIDI channel's volume
+	WORD	m_aChanVolume[COLORS];	// each MIDI channel's volume
 	int		m_nCurMidiChan;		// current MIDI channel
 	int		m_nChanCycles;		// number of cycles through all channels
 	int		m_nStartNote;		// current start note

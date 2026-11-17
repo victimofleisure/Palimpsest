@@ -57,6 +57,7 @@ int CPalimpsestMusic::MakeScale(int iCycle)
 	static const int aKeyOffset[12] = {
 		0, 3, 6, 2, 5, 1, 4, 6, 2, 5, 1, 4
 	};
+	// rotate color assignments across keys to retain pitch continuity where possible
 	int	nOffset = aKeyOffset[iCycle % OCTAVE];
 	for (int iTone = 0; iTone < COLORS; iTone++) {
 		int	nNote = nStartNote + iTone / nScaleLen * OCTAVE + aScale[iTone % nScaleLen];
@@ -116,6 +117,7 @@ bool CPalimpsestMusic::Open(UINT nMidiOutDev)
 
 void CPalimpsestMusic::ExportInit(double fFrameRate)
 {
+	// when importing it's helpful if all lanes start at the same time
 	ASSERT(fFrameRate > 0);
 	m_bIsExport = true;
 	m_fFrameRate = fFrameRate;
@@ -182,6 +184,7 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor, bool bIsContracting, double
 	if (m_nCurMidiChan >= COLORS)	// if reached end of channels
 		m_nCurMidiChan = 0;	// wrap around to first channel
 	// set current channel's volume to zero
+	// reset the next voice before its new note; previous voices continue releasing
 	MidiOut(WHEEL, m_nCurMidiChan, 0, 0);
 	// select instrument based on expansion versus contraction
 	int	nInstSel = bIsContracting ? MIDI_NOTE_MAX : 0;
@@ -203,6 +206,7 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor, bool bIsContracting, double
 	MidiOut(CONTROL, m_nCurMidiChan, CC_AMP_ENV_RELEASE, nRelease);
 	// start current channel's note
 	int	nNote = m_aColorNote[iCurColor];
+	// velocity tracks visual core opacity; exclude zero because it means note off
 	int nVelo = Round(fGradientCoreFrac * (MIDI_NOTE_MAX - 1)) + 1;
 	MidiOut(NOTE_ON, m_nCurMidiChan, nNote, nVelo);
 #if MUSIC_LOGGING && LOG_NOTES
@@ -215,11 +219,12 @@ void CPalimpsestMusic::StartPrimitive(int iCurColor, bool bIsContracting, double
 
 void CPalimpsestMusic::ContinuePrimitive(double fPos)
 {
+	static const int nNominalVolume = 0x2EF6;	// 0.00 dB in Reason
+	int	nVolume = Round(fPos * nNominalVolume);
 	// update current channel's volume
-	int	nVolume = Round(fPos * 0x2EF6);
 	if (nVolume != m_aChanVolume[m_nCurMidiChan]) {	// if volume actually changed
-		MidiOut(WHEEL, m_nCurMidiChan, nVolume & 0x7f, nVolume >> 7);
-		m_aChanVolume[m_nCurMidiChan] = static_cast<BYTE>(nVolume);	// update cached volume
+		MidiOut(WHEEL, m_nCurMidiChan, nVolume & 0x7f, nVolume >> 7);	// LSB, MSB
+		m_aChanVolume[m_nCurMidiChan] = static_cast<WORD>(nVolume);	// update cached volume
 	}
 	m_nFrames++;
 }
@@ -235,6 +240,7 @@ void CPalimpsestMusic::MidiOut(int nCmd, int nChan, int nP1, int nP2)
 {
 	DWORD	dwMsg = MakeMidiMsg(nCmd, nChan, nP1, nP2);
 	if (m_bIsExport) {	// if exporting, store event
+		// derive event time from frame count so exported MIDI matches the image sequence
 		DWORD	dwTime = GetFrameTick(m_nFrames);
 		CMidiFile::MIDI_EVENT	evt = {dwTime, dwMsg};
 		m_aMidiEvent[nChan].Add(evt);
