@@ -9,7 +9,7 @@
 		rev		date	comments
         00      13nov26	initial version
         01      16nov26	move to helper class
-		02		17nov26	enhance mapping
+		02		17nov26	upgrade mapping scheme
 
 */
 
