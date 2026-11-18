@@ -27,7 +27,7 @@
 #define LOG_BENCHMARKS		0		// non-zero to write benchmarks in app's log file
 #define BENCHMARK_GROW_BY	7200	// number of samples by which benchmark array grows
 #define STATISTICS_FRAMES	120		// number of frames to accumulate statistics over
-#define EXPORT_MIDI_ONLY	1		// non-zero to export MIDI file only, skipping images
+#define EXPORT_MIDI_ONLY	0		// non-zero to export MIDI file only, skipping images
 
 CPalimpsestDraw::CPalimpsestDraw()
 	: m_stats(STATISTICS_FRAMES)
