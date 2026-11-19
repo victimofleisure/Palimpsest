@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      15nov26	initial version
+		01		19nov26	add record MIDI only
 
 */
 
@@ -24,5 +25,6 @@ CCmdLineArgs::CCmdLineArgs()
 	m_szRecFrameSize = CSize(1920, 1080);
 	m_fRecFrameRate = 60;
 	m_nRecDuration = 60;
+	m_bRecMidiOnly = false;
 }
 

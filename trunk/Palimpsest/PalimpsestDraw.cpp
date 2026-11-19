@@ -9,6 +9,7 @@
 		rev		date	comments
         00      13nov26	initial version
         01      16nov26	add export
+		02		19nov26	add record MIDI only argument
 
 */
 
@@ -27,7 +28,6 @@
 #define LOG_BENCHMARKS		0		// non-zero to write benchmarks in app's log file
 #define BENCHMARK_GROW_BY	7200	// number of samples by which benchmark array grows
 #define STATISTICS_FRAMES	120		// number of frames to accumulate statistics over
-#define EXPORT_MIDI_ONLY	0		// non-zero to export MIDI file only, skipping images
 
 CPalimpsestDraw::CPalimpsestDraw()
 	: m_stats(STATISTICS_FRAMES)
@@ -308,7 +308,7 @@ bool CPalimpsestDraw::OnDraw()
 	state.bContracting = m_bContracting;
 	m_params.aPalette[m_params.iCurColor].Tween(
 		m_clrStart, m_clrTarget, fEasedPos);
-	if (!EXPORT_MIDI_ONLY || !m_bIsExport) {	// if not skipping images
+	if (!(m_bIsExport && theApp.m_args.m_bRecMidiOnly)) {	// if not skipping images
 		// nearly all the overhead is from this block
 		m_pContext->UpdateSubresource(m_pParameters, 0, NULL, &m_params, 0, 0);
 		RasterizeCoverage(m_coverage, state);
@@ -724,7 +724,7 @@ bool CPalimpsestDraw::CreateExport()
 bool CPalimpsestDraw::ExportFrame(LPCTSTR pszPath)
 {
 	OnDraw();
-	if (EXPORT_MIDI_ONLY)
+	if (theApp.m_args.m_bRecMidiOnly)	// if skipping images
 		return true;
 	return WriteFrame(pszPath);
 }

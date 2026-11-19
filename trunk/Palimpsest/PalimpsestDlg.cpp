@@ -9,6 +9,7 @@
 		rev		date	comments
 		00      03nov26	initial version
 		01		13nov26	port to render thread
+		02		19nov26	check for image sequence in destination folder
 
 */
 
@@ -91,10 +92,45 @@ void CPalimpsestDlg::SingleStep()
 	theApp.m_rt.SingleStep();
 }
 
+CString	CPalimpsestDlg::MakeImageSequenceFileName(CString sFolderPath, UINT iFrame)
+{
+	CString	sSeqNum;
+	sSeqNum.Format(_T("%06d"), iFrame);
+	CPathStr	sImagePath(sFolderPath);
+	sImagePath.Append(_T("\\img") + sSeqNum + _T(".png"));
+	return sImagePath;
+}
+
 bool CPalimpsestDlg::Export()
 {
 	if (!theApp.m_rt.CreateExport())
 		return false;
+	CString	sDestFolderPath(theApp.m_args.m_sRecFolderPath);
+	CPathStr	sMidiFilePath(sDestFolderPath);
+	sMidiFilePath.Append(_T("palimpsest.mid"));
+	if (theApp.m_args.m_bRecMidiOnly) {	// if skipping images
+		if (PathFileExists(sMidiFilePath)) {	// if MIDI file exists
+			UINT	nType = MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING;
+			CString	sWarn;
+			AfxFormatString1(sWarn, IDS_FILE_OVERWRITE_WARN, sMidiFilePath);
+			if (AfxMessageBox(sWarn, nType) != IDYES)
+				return false;	// user chickened out
+		}
+	} else {	// normal operation
+		// check for pre-existing image sequence in export folder
+		CString	sImagePath(MakeImageSequenceFileName(sDestFolderPath, 0));
+		if (PathFileExists(sImagePath)) {	// if first frame exists
+			UINT	nType = MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING;
+			if (AfxMessageBox(IDS_IMAGE_SEQ_OVERWRITE_WARN, nType) != IDYES)
+				return false;	// user chickened out
+		}
+		// delete pre-existing image sequence if any
+		CString	sRecordExt(PathFindExtension(sImagePath));
+		CPathStr	sWildcardPath(sDestFolderPath);
+		sWildcardPath.Append(_T("img*") + sRecordExt);
+		WildcardDeleteFile(sWildcardPath);
+	}
+	// do the export
 	CProgressDlg	dlgProgress;
 	if (!dlgProgress.Create())
 		return false;
@@ -106,14 +142,12 @@ bool CPalimpsestDlg::Export()
 			return false;
 		CString	sFileName;
 		sFileName.Format(_T("img%06d"), iFrame);
-		CPathStr sPath(theApp.m_args.m_sRecFolderPath);
+		CPathStr sPath(sDestFolderPath);
 		sPath.Append(sFileName + _T(".png"));
 		if (!theApp.m_rt.ExportFrame(sPath))
 			return false;
 	}
-	CPathStr	sPath(theApp.m_args.m_sRecFolderPath);
-	sPath.Append(_T("palimpsest.mid"));
-	theApp.m_rt.WriteMidiFile(sPath);
+	theApp.m_rt.WriteMidiFile(sMidiFilePath);
 	return true;
 }
 

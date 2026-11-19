@@ -63,6 +63,7 @@ protected:
 	void	Pause(bool bEnable);
 	void	SingleStep();
 	bool	Export();
+	static CString	MakeImageSequenceFileName(CString sFolderPath, UINT iFrame);
 
 // Message handlers
 	DECLARE_MESSAGE_MAP()

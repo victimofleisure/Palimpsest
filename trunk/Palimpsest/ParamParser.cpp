@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      15nov26	initial version
+		01		19nov26	add record MIDI only
 
 */
 
@@ -132,6 +133,9 @@ void CParamParser::ParseParam(const TCHAR* pszParam, BOOL bFlag, BOOL bLast)
 			case FLAG_license:
 				m_bShowLicense = true;
 				break;
+			case FLAG_recmidi:
+				m_bRecMidiOnly = true;
+				break;
 			default:
 				m_iFlag = iFlag;	// flag requires a parameter
 			}
@@ -220,6 +224,9 @@ bool CParamParser::ParseCommandLine()
 	}
 	if (!m_nRandSeed)	// if random seed not specified
 		m_nRandSeed = GetTickCount();
+	CString	sSeed;
+	sSeed.Format(_T("%d"), m_nRandSeed);
+	theApp.WriteLogEntry(theApp.GetVersionString() + _T(" seed=") + sSeed);
 	return true;	// proceed with launching app
 }
 

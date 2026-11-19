@@ -13,6 +13,7 @@
         03      15nov26	1.0.00.005
         04      16nov26	1.0.00.008
         05      17nov26	1.0.00.009
+        06      19nov26	1.0.00.011
 
 		DON'T FORGET TO CHANGE VERSION RESOURCE
 

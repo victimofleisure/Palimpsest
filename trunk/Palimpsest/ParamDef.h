@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      15nov26	initial version
+		01		19nov26	add record MIDI only
 
 */
 
@@ -23,6 +24,7 @@ PARAMDEF(record)		// recording destination folder path
 PARAMDEF(recsize)		// recording frame size, in pixels
 PARAMDEF(recrate)		// recording frame rate, in frames per second
 PARAMDEF(recdur)		// recording duration, in seconds
+PARAMDEF(recmidi)		// record MIDI only; skip generating images
 PARAMDEF(markdown)		// write help markdown to the specified file
 PARAMDEF(license)		// display the license
 

@@ -8,6 +8,7 @@
 		revision history:
 		rev		date	comments
         00      15nov26	initial version
+		01		19nov26	add record MIDI only
 
 */
 
@@ -32,6 +33,7 @@ public:
 	CSize	m_szRecFrameSize;	// recording frame size in pixels
 	float	m_fRecFrameRate;	// recording frame rate
 	int		m_nRecDuration;		// recording duration in frames
+	bool	m_bRecMidiOnly;		// record MIDI only; skip generating images
 
 // Attributes
 
